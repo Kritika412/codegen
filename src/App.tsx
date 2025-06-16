@@ -35,12 +35,14 @@ const mockIssues = [
     title: 'Add auth middleware',
     assignee: 'Alice',
     status: 'in-progress',
+    body: 'Implement authentication middleware for API routes.',
   },
   {
     id: 346,
     title: 'Fix broken PR status badge',
     assignee: 'Bob',
     status: 'blocked',
+    body: 'The PR status badge is not updating correctly on the dashboard.',
   },
 ];
 
@@ -155,12 +157,17 @@ function App() {
     goals: 'Sprint goals from API'
   })) : mockSprints;
   
-  const displayIssues = useMockData ? mockIssues : issues.length > 0 ? issues.map(issue => ({
-    id: issue.number,
-    title: issue.title,
-    assignee: issue.assignee || 'Unassigned',
-    status: issue.status
-  })) : mockIssues;
+  const displayIssues = useMockData
+    ? []
+    : issues.length > 0
+      ? issues.map(issue => ({
+          id: issue.number,
+          title: issue.title,
+          assignee: issue.assignee || 'Unassigned',
+          status: issue.status,
+          body: issue.body || '',
+        }))
+      : [];
   
   const currentSprint = displaySprints.find(sprint => sprint.id === selectedSprint) || displaySprints[0];
 
@@ -180,6 +187,12 @@ function App() {
     e.preventDefault();
     console.log('Saving changes:', { selectedIssue, issueDescription, selectedLLM });
   };
+
+  // Issue Description 업데이트
+  useEffect(() => {
+    const found = displayIssues.find(issue => issue.id.toString() === selectedIssue);
+    setIssueDescription(found ? found.body || '' : '');
+  }, [selectedIssue, displayIssues]);
 
   return (
     <div className="bg-gray-100 text-gray-900 min-h-screen">
@@ -340,15 +353,19 @@ function App() {
         <section className="bg-white p-6 rounded-xl shadow">
           <h3 className="text-xl font-semibold mb-4">Sprint Issues</h3>
           <div className="space-y-4">
-            {displayIssues.map((issue) => (
-              <div key={issue.id} className="border p-4 rounded-md flex justify-between items-center bg-gray-50">
-                <div>
-                  <p className="font-medium">[#{issue.id}] {issue.title}</p>
-                  <p className="text-sm text-gray-500">Assigned to: {issue.assignee}</p>
+            {displayIssues.length === 0 ? (
+              <div className="text-gray-400 text-center">No issues for this sprint.</div>
+            ) : (
+              displayIssues.map((issue) => (
+                <div key={issue.id} className="border p-4 rounded-md flex justify-between items-center bg-gray-50">
+                  <div>
+                    <p className="font-medium">[#{issue.id}] {issue.title}</p>
+                    <p className="text-sm text-gray-500">Assigned to: {issue.assignee}</p>
+                  </div>
+                  <a href="#" className="text-blue-600 hover:underline">View on GitHub</a>
                 </div>
-                <a href="#" className="text-blue-600 hover:underline">View on GitHub</a>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </section>
 
