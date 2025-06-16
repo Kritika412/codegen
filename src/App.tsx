@@ -87,7 +87,7 @@ const mockStats = {
 
 function App() {
   const [selectedSprint, setSelectedSprint] = useState('sprint1');
-  const [selectedIssue, setSelectedIssue] = useState('345');
+  const [selectedIssue, setSelectedIssue] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
   const [selectedLLM, setSelectedLLM] = useState('codex');
   
@@ -188,11 +188,22 @@ function App() {
     console.log('Saving changes:', { selectedIssue, issueDescription, selectedLLM });
   };
 
-  // Issue Description 업데이트
+  // Ensure initial issue description is set when issues are loaded
   useEffect(() => {
-    const found = displayIssues.find(issue => issue.id.toString() === selectedIssue);
-    setIssueDescription(found ? found.body || '' : '');
-  }, [selectedIssue, displayIssues]);
+    if (displayIssues.length > 0) {
+      // If selectedIssue is not in the list, select the first one
+      const found = displayIssues.find(issue => issue.id.toString() === selectedIssue);
+      if (!selectedIssue || !found) {
+        setSelectedIssue(displayIssues[0].id.toString());
+        setIssueDescription(displayIssues[0].body || '');
+      } else {
+        setIssueDescription(found.body || '');
+      }
+    } else {
+      setIssueDescription('');
+    }
+    // eslint-disable-next-line
+  }, [displayIssues, selectedIssue]);
 
   return (
     <div className="bg-gray-100 text-gray-900 min-h-screen">
