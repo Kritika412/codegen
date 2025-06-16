@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import './App.css';
+import { apiClient } from './api/client';
+import type { ApiIssue, ApiSprint } from './api/client';
 
 // 모든 데이터를 인라인으로 정의 (types 의존성 제거)
 const mockSprints = [
@@ -87,7 +89,80 @@ function App() {
   const [issueDescription, setIssueDescription] = useState('');
   const [selectedLLM, setSelectedLLM] = useState('codex');
   
-  const currentSprint = mockSprints.find(sprint => sprint.id === selectedSprint) || mockSprints[0];
+  // API 상태
+  const [sprints, setSprints] = useState<ApiSprint[]>([]);
+  const [issues, setIssues] = useState<ApiIssue[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Mock data fallback
+  const [useMockData, setUseMockData] = useState(false);
+  
+  // API 데이터 가져오기
+  const fetchSprints = async () => {
+    try {
+      const sprintData = await apiClient.getSprints();
+      setSprints(sprintData);
+      if (sprintData.length > 0 && !selectedSprint) {
+        setSelectedSprint(sprintData[0].id);
+      }
+    } catch (error) {
+      console.warn('Failed to fetch sprints, using mock data:', error);
+      setUseMockData(true);
+    }
+  };
+  
+  const fetchIssues = async (sprintName?: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const issueData = await apiClient.getIssues(sprintName);
+      setIssues(issueData);
+      if (issueData.length > 0 && !selectedIssue) {
+        setSelectedIssue(issueData[0].number.toString());
+      }
+    } catch (error) {
+      console.warn('Failed to fetch issues:', error);
+      setError('Failed to fetch issues from GitHub. Using mock data.');
+      setUseMockData(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // 컴포넌트 마운트 시 데이터 초기화
+  useEffect(() => {
+    fetchSprints();
+    fetchIssues();
+  }, []);
+  
+  // Sprint 변경 시 해당 기간 이슈 가져오기
+  useEffect(() => {
+    if (!useMockData && selectedSprint) {
+      const currentSprint = sprints.find(s => s.id === selectedSprint);
+      if (currentSprint) {
+        fetchIssues(currentSprint.name);
+      }
+    }
+  }, [selectedSprint, sprints, useMockData]);
+  
+  // 현재 표시할 데이터 선택
+  const displaySprints = useMockData ? mockSprints : sprints.length > 0 ? sprints.map(s => ({
+    id: s.id,
+    name: s.name,
+    dateRange: `${s.start_date} – ${s.end_date}`,
+    daysRemaining: Math.max(0, Math.ceil((new Date(s.end_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))),
+    goals: 'Sprint goals from API'
+  })) : mockSprints;
+  
+  const displayIssues = useMockData ? mockIssues : issues.length > 0 ? issues.map(issue => ({
+    id: issue.number,
+    title: issue.title,
+    assignee: issue.assignee || 'Unassigned',
+    status: issue.status
+  })) : mockIssues;
+  
+  const currentSprint = displaySprints.find(sprint => sprint.id === selectedSprint) || displaySprints[0];
 
   const handleSprintChange = (sprintId: string) => {
     setSelectedSprint(sprintId);
@@ -111,6 +186,23 @@ function App() {
       <Header />
       
       <div className="max-w-7xl mx-auto p-6 space-y-8">
+        {/* 에러 메시지 */}
+        {error && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+            <div className="text-sm text-yellow-700">
+              <strong>⚠️ {error}</strong>
+            </div>
+          </div>
+        )}
+        
+        {/* 로딩 인디케이터 */}
+        {loading && (
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+            <div className="text-sm text-blue-700">
+              🔄 Loading issues...
+            </div>
+          </div>
+        )}
         {/* Sprint Picker */}
         <section className="bg-white p-6 rounded-xl shadow border border-gray-200">
           <h2 className="text-xl font-semibold mb-2">Select Current Sprint</h2>
@@ -125,7 +217,7 @@ function App() {
                 onChange={(e) => handleSprintChange(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
               >
-                {mockSprints.map((sprint) => (
+                {displaySprints.map((sprint) => (
                   <option key={sprint.id} value={sprint.id}>
                     {sprint.name}
                   </option>
@@ -155,7 +247,7 @@ function App() {
                 onChange={(e) => setSelectedIssue(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
               >
-                {mockIssues.map((issue) => (
+                {displayIssues.map((issue) => (
                   <option key={issue.id} value={issue.id.toString()}>
                     [#{issue.id}] {issue.title}
                   </option>
@@ -248,7 +340,7 @@ function App() {
         <section className="bg-white p-6 rounded-xl shadow">
           <h3 className="text-xl font-semibold mb-4">Sprint Issues</h3>
           <div className="space-y-4">
-            {mockIssues.map((issue) => (
+            {displayIssues.map((issue) => (
               <div key={issue.id} className="border p-4 rounded-md flex justify-between items-center bg-gray-50">
                 <div>
                   <p className="font-medium">[#{issue.id}] {issue.title}</p>
