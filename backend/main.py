@@ -41,6 +41,7 @@ class Issue(BaseModel):
     updated_at: str
     body: Optional[str]
     labels: List[str]
+    repo: str
 
 class Sprint(BaseModel):
     id: str
@@ -103,37 +104,39 @@ def root():
 @app.get("/api/issues", response_model=List[Issue])
 def get_issues(sprint_name: Optional[str] = None):
     try:
-        repo = g.get_repo(GITHUB_REPO)
-        issues = repo.get_issues(state='open')
+        user = g.get_user()
         results = []
         if sprint_name:
             start, end = parse_sprint_dates(sprint_name)
             print(f"Filtering by sprint: {start} → {end}")
-        for issue in issues:
-            if issue.pull_request:
-                continue
-            if sprint_name and not issue_in_sprint_period(issue, start, end):
-                continue
-            labels = [l.name for l in issue.labels]
-            status = "todo"
-            lnames = [l.lower() for l in labels]
-            if any(l in lnames for l in ["in progress", "in-progress", "working"]):
-                status = "in-progress"
-            elif any(l in lnames for l in ["blocked", "on hold"]):
-                status = "blocked"
-            elif any(l in lnames for l in ["done", "completed", "resolved"]):
-                status = "completed"
-            results.append(Issue(
-                id=issue.id,
-                number=issue.number,
-                title=issue.title,
-                assignee=issue.assignee.login if issue.assignee else None,
-                status=status,
-                created_at=issue.created_at.isoformat(),
-                updated_at=issue.updated_at.isoformat(),
-                body=issue.body,
-                labels=labels
-            ))
+        for repo in user.get_repos():
+            issues = repo.get_issues(state='open')
+            for issue in issues:
+                if hasattr(issue, "pull_request") and issue.pull_request:
+                    continue
+                if sprint_name and not issue_in_sprint_period(issue, start, end):
+                    continue
+                labels = [l.name for l in issue.labels]
+                status = "todo"
+                lnames = [l.lower() for l in labels]
+                if any(l in lnames for l in ["in progress", "in-progress", "working"]):
+                    status = "in-progress"
+                elif any(l in lnames for l in ["blocked", "on hold"]):
+                    status = "blocked"
+                elif any(l in lnames for l in ["done", "completed", "resolved"]):
+                    status = "completed"
+                results.append(Issue(
+                    id=issue.id,
+                    number=issue.number,
+                    title=issue.title,
+                    assignee=issue.assignee.login if issue.assignee else None,
+                    status=status,
+                    created_at=issue.created_at.isoformat(),
+                    updated_at=issue.updated_at.isoformat(),
+                    body=issue.body,
+                    labels=labels,
+                    repo=issue.repository.full_name  # Add repo name here
+                ))
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Issue fetch error: {str(e)}")

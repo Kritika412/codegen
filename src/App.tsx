@@ -166,6 +166,7 @@ function App() {
           assignee: issue.assignee || 'Unassigned',
           status: issue.status,
           body: issue.body || '',
+          repo: issue.repo,
         }))
       : [];
   
@@ -285,7 +286,7 @@ function App() {
               >
                 {displayIssues.map((issue) => (
                   <option key={issue.id} value={issue.id.toString()}>
-                    [#{issue.id}] {issue.title}
+                    [{issue.repo}] [#{issue.id}] {issue.title}
                   </option>
                 ))}
               </select>
