@@ -316,7 +316,7 @@ function App() {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
               >
                 <option value="codex">Codex</option>
-                <option value="claude">Claude</option>
+                <option value="claude" disabled>Claude (disabled)</option>
               </select>
             </div>
 
@@ -324,7 +324,8 @@ function App() {
               <button
                 type="button"
                 onClick={handleAsk}
-                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 opacity-50 cursor-not-allowed"
+                disabled
               >
                 Ask
               </button>
@@ -337,7 +338,8 @@ function App() {
               </button>
               <button
                 type="submit"
-                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 opacity-50 cursor-not-allowed"
+                disabled
               >
                 Save Changes
               </button>
