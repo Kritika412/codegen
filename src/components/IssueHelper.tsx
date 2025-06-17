@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import type { Issue } from '../types';
+import { apiClient } from '../api/client';
+
 
 interface IssueHelperProps {
   issues: Issue[];
@@ -75,27 +77,38 @@ const IssueHelper: React.FC<IssueHelperProps> = ({ issues }) => {
         </div>
 
         <div className="flex space-x-4">
-          <button
-            type="button"
-            onClick={handleAsk}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-          >
-            Ask
-          </button>
-          <button
-            type="button"
-            onClick={handleCode}
-            className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700"
-          >
-            Code
-          </button>
-          <button
-            type="submit"
-            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-          >
-            Save Changes
-          </button>
-        </div>
+        {/* <button
+          type="button"
+          onClick={handleAsk}
+          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+        >
+          Ask
+        </button> */}
+
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              const result = await apiClient.triggerCodexGeneration();
+              alert(`✅ ${result.message}`);
+            } catch (err) {
+              alert("❌ Failed to trigger Codex. See console for details.");
+              console.error(err);
+            }
+          }}
+          className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700"
+        >
+          Code
+        </button>
+
+        <button
+          type="submit"
+          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+        >
+          Save Changes
+        </button>
+      </div>
+
       </form>
     </section>
   );

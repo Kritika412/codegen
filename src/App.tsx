@@ -179,9 +179,21 @@ function App() {
     console.log('Asking for help with issue:', selectedIssue);
   };
 
-  const handleCode = () => {
-    console.log('Generating code for issue:', selectedIssue);
+  const handleCode = async () => {
+    const prompt = issueDescription || "Add backend logic";
+    const response = await fetch("http://localhost:8000/api/run-codex", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+    if (response.ok) {
+      alert("✅ Codex is running. Check your terminal.");
+    } else {
+      alert("❌ Failed to trigger Codex.");
+    }
   };
+  
+  
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();

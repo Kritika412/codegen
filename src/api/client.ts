@@ -44,6 +44,24 @@ class ApiClient {
   async getSprints(): Promise<ApiSprint[]> {
     return this.fetchWithErrorHandling(`${API_BASE_URL}/sprints`);
   }
+  
+  async triggerCodexGeneration(): Promise<{ message: string }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/run-codex`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error("Codex trigger error:", error);
+      throw error;
+    }
+  }
+  
+  
+  
 }
 
 export const apiClient = new ApiClient();
