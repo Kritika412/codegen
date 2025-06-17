@@ -1,4 +1,5 @@
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL =  'https://czkkuw93y9.us-east-1.awsapprunner.com/api';
+//'http://localhost:8000/api';
 
 export interface ApiIssue {
   id: number;
