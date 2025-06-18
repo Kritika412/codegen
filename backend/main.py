@@ -7,11 +7,16 @@ from typing import List, Optional
 from pydantic import BaseModel
 import subprocess
 import os
+import requests
+import re
 
 # Load environment variables
 load_dotenv()
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")
+token = GITHUB_TOKEN
+username =  'hail007' 
+project_number = 2
 
 if not GITHUB_TOKEN:
     raise ValueError("GITHUB_TOKEN not found in environment variables")
@@ -51,6 +56,7 @@ class Sprint(BaseModel):
 
 class PromptRequest(BaseModel):
     prompt: str
+    repo: str  # Add this field
 
 # Sprint helpers
 def parse_sprint_dates(sprint_name: str) -> tuple[datetime, datetime]:
@@ -141,7 +147,7 @@ def get_issues(sprint_name: Optional[str] = None):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Issue fetch error: {str(e)}")
 
-@app.get("/api/sprints", response_model=List[Sprint])
+#@app.get("/api/sprints", response_model=List[Sprint])
 def get_sprints():
     return [
         Sprint(id="sprint34", name="Sprint 34: June 14 – June 17", start_date="2025-06-14", end_date="2025-06-17"),
@@ -149,10 +155,110 @@ def get_sprints():
         Sprint(id="sprint32", name="Sprint 32: June 6 – June 9", start_date="2025-06-06", end_date="2025-06-09")
     ]
 
+@app.get("/api/sprints", response_model=List[Sprint])
+def get_sprints_() -> List[Sprint]:
+    """
+    Get all sprint views from a GitHub project and parse them into Sprint objects.
+    
+    Args:
+        token: GitHub personal access token
+        username: GitHub username
+        project_number: Project number (e.g., 2 for /projects/2)
+    
+    Returns:
+        List of Sprint objects sorted by sprint number (descending)
+    """
+    url = "https://api.github.com/graphql"
+    
+    query = """
+    query($login: String!, $number: Int!) {
+        user(login: $login) {
+            projectV2(number: $number) {
+                id
+                title
+                views(first: 50) {
+                    nodes {
+                        id
+                        name
+                        layout
+                    }
+                }
+            }
+        }
+    }
+    """
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "query": query,
+        "variables": {
+            "login": username,
+            "number": project_number
+        }
+    }
+    
+    response = requests.post(url, headers=headers, json=data)
+    result = response.json()
+    
+    if 'data' not in result or not result['data']['user'] or not result['data']['user']['projectV2']:
+        print("Project not found or not accessible")
+        return []
+    
+    views = result['data']['user']['projectV2']['views']['nodes']
+    sprints = []
+    
+    # Regex pattern to match "Sprint 34: June 14 – June 17" format
+    sprint_pattern = r"Sprint\s+(\d+):\s+(\w+\s+\d+)\s+[–-]\s+(\w+\s+\d+)"
+    
+    for view in views:
+        view_name = view['name']
+        match = re.match(sprint_pattern, view_name, re.IGNORECASE)
+        
+        if match:
+            sprint_number = match.group(1)
+            start_date_str = match.group(2)  # "June 14"
+            end_date_str = match.group(3)    # "June 17"
+            
+            # Parse dates - assuming current year (2025)
+            current_year = 2025
+            
+            try:
+                # Parse start date
+                start_date_obj = datetime.strptime(f"{start_date_str} {current_year}", "%B %d %Y")
+                start_date = start_date_obj.strftime("%Y-%m-%d")
+                
+                # Parse end date
+                end_date_obj = datetime.strptime(f"{end_date_str} {current_year}", "%B %d %Y")
+                end_date = end_date_obj.strftime("%Y-%m-%d")
+                
+                # Create Sprint object
+                sprint = Sprint(
+                    id=f"sprint{sprint_number}",
+                    name=view_name,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+                
+                sprints.append(sprint)
+                
+            except ValueError as e:
+                print(f"Error parsing dates for sprint '{view_name}': {e}")
+                continue
+    
+    # Sort by sprint number (descending - newest first)
+    sprints.sort(key=lambda s: int(s.id.replace("sprint", "")), reverse=True)
+    
+    return sprints
+
 @app.post("/api/run-codex")
 async def run_codex(prompt_req: PromptRequest):
     try:
-        subprocess.Popen(["python", "run_codex_todo.py", prompt_req.prompt])
+        # Now you can use prompt_req.repo
+        subprocess.Popen(["python", "run_codex_todo.py", prompt_req.prompt, prompt_req.repo])
         return {"message": "Codex started"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Codex error: {str(e)}")

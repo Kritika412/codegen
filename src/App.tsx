@@ -161,15 +161,16 @@ function App() {
     ? []
     : issues.length > 0
       ? issues.map(issue => ({
-          id: issue.number,
+          id: `${issue.repo}#${issue.number}`, // composite id
           title: issue.title,
           assignee: issue.assignee || 'Unassigned',
           status: issue.status,
           body: issue.body || '',
           repo: issue.repo,
+          number: issue.number, // keep number for display
         }))
       : [];
-  
+
   const currentSprint = displaySprints.find(sprint => sprint.id === selectedSprint) || displaySprints[0];
 
   const handleSprintChange = (sprintId: string) => {
@@ -181,11 +182,14 @@ function App() {
   };
 
   const handleCode = async () => {
+    const issue = displayIssues.find(issue => issue.id === selectedIssue);
     const prompt = issueDescription || "Add backend logic";
+    const repo = issue?.repo;
+
     const response = await fetch("http://localhost:8000/api/run-codex", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, repo }),
     });
     if (response.ok) {
       alert("✅ Codex is running. Check your terminal.");
@@ -285,8 +289,8 @@ function App() {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
               >
                 {displayIssues.map((issue) => (
-                  <option key={issue.id} value={issue.id.toString()}>
-                    [{issue.repo}] [#{issue.id}] {issue.title}
+                  <option key={issue.id} value={issue.id}>
+                    [{issue.repo}] [#{issue.number}] {issue.title}
                   </option>
                 ))}
               </select>
@@ -385,7 +389,7 @@ function App() {
               displayIssues.map((issue) => (
                 <div key={issue.id} className="border p-4 rounded-md flex justify-between items-center bg-gray-50">
                   <div>
-                    <p className="font-medium">[#{issue.id}] {issue.title}</p>
+                    <p className="font-medium">[{issue.repo}] [#{issue.number}] {issue.title}</p>
                     <p className="text-sm text-gray-500">Assigned to: {issue.assignee}</p>
                   </div>
                   <a href="#" className="text-blue-600 hover:underline">View on GitHub</a>
