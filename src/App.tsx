@@ -100,53 +100,73 @@ function App() {
   // Mock data fallback
   const [useMockData, setUseMockData] = useState(false);
   
-  // API 데이터 가져오기
-  const fetchSprints = async () => {
-    try {
-      const sprintData = await apiClient.getSprints();
-      setSprints(sprintData);
-      if (sprintData.length > 0 && !selectedSprint) {
-        setSelectedSprint(sprintData[0].id);
-      }
-    } catch (error) {
-      console.warn('Failed to fetch sprints, using mock data:', error);
-      setUseMockData(true);
-    }
-  };
-  
   const fetchIssues = async (sprintName?: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const issueData = await apiClient.getIssues(sprintName);
-      setIssues(issueData);
-      if (issueData.length > 0 && !selectedIssue) {
-        setSelectedIssue(issueData[0].number.toString());
-      }
-    } catch (error) {
-      console.warn('Failed to fetch issues:', error);
-      setError('Failed to fetch issues from GitHub. Using mock data.');
-      setUseMockData(true);
-    } finally {
-      setLoading(false);
+  // Don't fetch issues if no sprint name is provided
+  if (!sprintName) {
+    console.log('No sprint name provided, skipping issue fetch');
+    return;
+  }
+  
+  setLoading(true);
+  setError(null);
+  try {
+    const issueData = await apiClient.getIssues(sprintName);
+    setIssues(issueData);
+    if (issueData.length > 0 && !selectedIssue) {
+      setSelectedIssue(issueData[0].number.toString());
     }
+  } catch (error) {
+    console.warn('Failed to fetch issues:', error);
+    setError('Failed to fetch issues from GitHub. Using mock data.');
+    setUseMockData(true);
+  } finally {
+    setLoading(false);
+  }
+};
+
+// Sprint 목록을 가져오는 함수 정의
+const fetchSprints = async () => {
+  setLoading(true);
+  setError(null);
+  try {
+    const sprintData = await apiClient.getSprints();
+    setSprints(sprintData);
+    setUseMockData(false);
+  } catch (error) {
+    console.warn('Failed to fetch sprints:', error);
+    setError('Failed to fetch sprints from GitHub. Using mock data.');
+    setUseMockData(true);
+    setSprints([]); // fallback to mockSprints in displaySprints
+  } finally {
+    setLoading(false);
+  }
+};
+
+// 컴포넌트 마운트 시 데이터 초기화
+useEffect(() => {
+  const initializeData = async () => {
+    await fetchSprints();
+    // Don't fetch issues immediately - wait for sprint selection
   };
-  
-  // 컴포넌트 마운트 시 데이터 초기화
-  useEffect(() => {
-    fetchSprints();
-    fetchIssues();
-  }, []);
-  
-  // Sprint 변경 시 해당 기간 이슈 가져오기
-  useEffect(() => {
-    if (!useMockData && selectedSprint) {
-      const currentSprint = sprints.find(s => s.id === selectedSprint);
-      if (currentSprint) {
-        fetchIssues(currentSprint.name);
-      }
+  initializeData();
+}, []);
+
+// Sprint 변경 시 해당 기간 이슈 가져오기
+useEffect(() => {
+  if (!useMockData && selectedSprint && sprints.length > 0) {
+    const currentSprint = sprints.find(s => s.id === selectedSprint);
+    if (currentSprint) {
+      fetchIssues(currentSprint.name);
     }
-  }, [selectedSprint, sprints, useMockData]);
+  }
+}, [selectedSprint, sprints, useMockData]);
+
+// Make sure we have a selected sprint when sprints are loaded
+useEffect(() => {
+  if (sprints.length > 0 && !selectedSprint) {
+    setSelectedSprint(sprints[0].id);
+  }
+}, [sprints, selectedSprint]);
   
   // 현재 표시할 데이터 선택
   const displaySprints = useMockData ? mockSprints : sprints.length > 0 ? sprints.map(s => ({

@@ -107,45 +107,348 @@ def issue_in_sprint_period(issue, start: datetime, end: datetime) -> bool:
 def root():
     return {"message": "Harmonia Agile Agentic Framework API"}
 
+import requests
+from typing import List, Optional
+from fastapi import HTTPException
+from dataclasses import dataclass
+
+@dataclass
+class Issue:
+    id: str
+    number: int
+    title: str
+    assignee: Optional[str]
+    status: str
+    created_at: str
+    updated_at: str
+    body: Optional[str]
+    labels: List[str]
+    repo: str
+
+def get_project_issues_by_sprint_and_status(token: str, username: str, project_number: int, 
+                                          sprint_name: str, status_filter: str = "Todo") -> List[dict]:
+    """
+    Get issues from a specific sprint view with a specific status from GitHub Projects.
+    
+    Args:
+        token: GitHub personal access token
+        username: GitHub username  
+        project_number: Project number
+        sprint_name: Name of the sprint view (e.g., "Sprint 34: June 14 – June 17")
+        status_filter: Status to filter by (default: "Todo")
+    
+    Returns:
+        List of issue dictionaries
+    """
+    url = "https://api.github.com/graphql"
+    
+    print(f"DEBUG: Looking for sprint '{sprint_name}' in project {project_number} for user {username}")
+    
+    # First, find the view ID for the sprint
+    query_views = """
+    query($login: String!, $number: Int!) {
+        user(login: $login) {
+            projectV2(number: $number) {
+                id
+                views(first: 50) {
+                    nodes {
+                        id
+                        name
+                    }
+                }
+            }
+        }
+    }
+    """
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "query": query_views,
+        "variables": {
+            "login": username,
+            "number": project_number
+        }
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()  # Raises exception for bad status codes
+        result = response.json()
+        
+        print(f"DEBUG: GraphQL response: {result}")
+        
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"Network error when fetching views: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Error parsing response when fetching views: {str(e)}")
+    
+    if 'errors' in result:
+        raise Exception(f"GraphQL errors: {result['errors']}")
+        
+    if 'data' not in result or not result['data']['user'] or not result['data']['user']['projectV2']:
+        raise Exception(f"Project not found or not accessible. Response: {result}")
+    
+    # Find the sprint view
+    sprint_view_id = None
+    available_views = []
+    for view in result['data']['user']['projectV2']['views']['nodes']:
+        available_views.append(view['name'])
+        if view['name'] == sprint_name:
+            sprint_view_id = view['id']
+            break
+    
+    if not sprint_view_id:
+        raise Exception(f"Sprint view '{sprint_name}' not found. Available views: {available_views}")
+    
+    print(f"DEBUG: Found sprint view ID: {sprint_view_id}")
+    
+    # Now get items from the specific view with their field values
+    query_items = """
+    query($projectId: ID!) {
+        node(id: $projectId) {
+            ... on ProjectV2 {
+                items(first: 100) {
+                    nodes {
+                        id
+                        content {
+                            ... on Issue {
+                                id
+                                number
+                                title
+                                body
+                                state
+                                createdAt
+                                updatedAt
+                                assignees(first: 1) {
+                                    nodes {
+                                        login
+                                    }
+                                }
+                                labels(first: 10) {
+                                    nodes {
+                                        name
+                                    }
+                                }
+                                repository {
+                                    nameWithOwner
+                                }
+                                url
+                            }
+                            ... on PullRequest {
+                                id
+                                number
+                                title
+                                body
+                                state
+                                createdAt
+                                updatedAt
+                                assignees(first: 1) {
+                                    nodes {
+                                        login
+                                    }
+                                }
+                                labels(first: 10) {
+                                    nodes {
+                                        name
+                                    }
+                                }
+                                repository {
+                                    nameWithOwner
+                                }
+                                url
+                            }
+                            ... on DraftIssue {
+                                id
+                                title
+                                body
+                                createdAt
+                                updatedAt
+                                assignees(first: 1) {
+                                    nodes {
+                                        login
+                                    }
+                                }
+                            }
+                        }
+                        fieldValues(first: 10) {
+                            nodes {
+                                ... on ProjectV2ItemFieldTextValue {
+                                    text
+                                    field {
+                                        ... on ProjectV2Field {
+                                            name
+                                        }
+                                    }
+                                }
+                                ... on ProjectV2ItemFieldSingleSelectValue {
+                                    name
+                                    field {
+                                        ... on ProjectV2SingleSelectField {
+                                            name
+                                        }
+                                    }
+                                }
+                                ... on ProjectV2ItemFieldIterationValue {
+                                    title
+                                    startDate
+                                    duration
+                                    iterationId
+                                    field {
+                                        ... on ProjectV2IterationField {
+                                            name
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    """
+    
+    data = {
+        "query": query_items,
+        "variables": {"projectId": result['data']['user']['projectV2']['id']}
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        items_result = response.json()
+        
+        print(f"DEBUG: Items query response status: {response.status_code}")
+        
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"Network error when fetching items: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Error parsing items response: {str(e)}")
+    
+    if 'errors' in items_result:
+        raise Exception(f"GraphQL errors when fetching items: {items_result['errors']}")
+    
+    if 'data' not in items_result or not items_result['data']['node']:
+        raise Exception(f"Failed to fetch project items. Response: {items_result}")
+    
+    # Filter items by status
+    filtered_issues = []
+    items = items_result['data']['node']['items']['nodes']
+    
+    for item in items:
+        if not item['content']:
+            continue
+            
+        content = item['content']
+        
+        # Skip pull requests if you only want issues
+        if 'url' in content and '/pull/' in content['url']:
+            continue
+        
+        # Find the status field value
+        item_status = None
+        for field_value in item['fieldValues']['nodes']:
+            if field_value and 'field' in field_value:
+                field_name = field_value['field']['name'].lower()
+                if 'status' in field_name:
+                    if 'name' in field_value:  # SingleSelect field
+                        item_status = field_value['name']
+                    elif 'text' in field_value:  # Text field
+                        item_status = field_value['text']
+                    break
+        
+        # Filter by status (project status field)
+        if item_status and item_status.lower() == status_filter.lower():
+            filtered_issues.append({
+                'item': item,
+                'content': content,
+                'status': item_status,
+                'issue_state': content.get('state', 'UNKNOWN')
+            })
+    
+    return filtered_issues
+
 @app.get("/api/issues", response_model=List[Issue])
 def get_issues(sprint_name: Optional[str] = None):
+    """
+    Get issues from GitHub Projects filtered by sprint and status.
+    
+    Args:
+        sprint_name: Name of the sprint view to filter by
+    
+    Returns:
+        List of issues with "Todo" status from the specified sprint
+    """
     try:
-        user = g.get_user()
+        # GitHub Projects configuration
+        #token = "your_github_token"  # Replace with your token
+        username = "hail007"  # Replace with your username
+        project_number = 2  # Replace with your project number
+        
+        if not sprint_name:
+            raise HTTPException(status_code=400, detail="sprint_name parameter is required")
+        
+        # Get issues from the specific sprint with "Todo" status
+        filtered_issues = get_project_issues_by_sprint_and_status(
+            token=token,
+            username=username,
+            project_number=project_number,
+            sprint_name=sprint_name,
+            status_filter="Todo"
+        )
+        
         results = []
-        if sprint_name:
-            start, end = parse_sprint_dates(sprint_name)
-            print(f"Filtering by sprint: {start} → {end}")
-        for repo in user.get_repos():
-            issues = repo.get_issues(state='open')
-            for issue in issues:
-                if hasattr(issue, "pull_request") and issue.pull_request:
-                    continue
-                if sprint_name and not issue_in_sprint_period(issue, start, end):
-                    continue
-                labels = [l.name for l in issue.labels]
-                status = "todo"
-                lnames = [l.lower() for l in labels]
-                if any(l in lnames for l in ["in progress", "in-progress", "working"]):
-                    status = "in-progress"
-                elif any(l in lnames for l in ["blocked", "on hold"]):
-                    status = "blocked"
-                elif any(l in lnames for l in ["done", "completed", "resolved"]):
-                    status = "completed"
-                results.append(Issue(
-                    id=issue.id,
-                    number=issue.number,
-                    title=issue.title,
-                    assignee=issue.assignee.login if issue.assignee else None,
-                    status=status,
-                    created_at=issue.created_at.isoformat(),
-                    updated_at=issue.updated_at.isoformat(),
-                    body=issue.body,
-                    labels=labels,
-                    repo=issue.repository.full_name  # Add repo name here
-                ))
+        
+        for issue_data in filtered_issues:
+            content = issue_data['content']
+            
+            # Extract assignee
+            assignee = None
+            if 'assignees' in content and content['assignees']['nodes']:
+                assignee = content['assignees']['nodes'][0]['login']
+            
+            # Extract labels
+            labels = []
+            if 'labels' in content and content['labels']['nodes']:
+                labels = [label['name'] for label in content['labels']['nodes']]
+            
+            # Extract repository name
+            repo_name = "Unknown"
+            if 'repository' in content:
+                repo_name = content['repository']['nameWithOwner']
+            elif 'title' in content and not content.get('url'):
+                repo_name = "Draft Issue"
+            
+            # Create Issue object
+            issue = Issue(
+                id=content['id'],
+                number=content.get('number', 0),  # Draft issues might not have numbers
+                title=content['title'],
+                assignee=assignee,
+                status="todo",  # We filtered for "Todo" status
+                created_at=content.get('createdAt', ''),
+                updated_at=content.get('updatedAt', ''),
+                body=content.get('body', ''),
+                labels=labels,
+                repo=repo_name
+            )
+            
+            results.append(issue)
+        
+        print(f"Found {len(results)} issues in sprint '{sprint_name}' with 'Todo' status")
         return results
+        
     except Exception as e:
+        print(f"Full error details: {str(e)}")
+        print(f"Error type: {type(e).__name__}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Issue fetch error: {str(e)}")
+
 
 #@app.get("/api/sprints", response_model=List[Sprint])
 def get_sprints():
