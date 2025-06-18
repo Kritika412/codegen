@@ -9,6 +9,7 @@ import subprocess
 import os
 import requests
 import re
+import unicodedata
 
 # Load environment variables
 load_dotenv()
@@ -124,6 +125,13 @@ class Issue:
     body: Optional[str]
     labels: List[str]
     repo: str
+
+def normalize_text(text):
+    # Replace en dash (–) and em dash (—) with regular hyphen (-)
+    text = text.replace('–', '-').replace('—', '-')
+    # You can also normalize other unicode characters
+    text = unicodedata.normalize('NFKD', text)
+    return text.strip()
 
 def get_project_issues_by_sprint_and_status(token: str, username: str, project_number: int, 
                                           sprint_name: str, status_filter: str = "Todo") -> List[dict]:
@@ -338,35 +346,42 @@ def get_project_issues_by_sprint_and_status(token: str, username: str, project_n
     # Filter items by status
     filtered_issues = []
     items = items_result['data']['node']['items']['nodes']
-    
+
+    def has_matching_iteration_and_status(field_values, sprint_name, status_filter):
+        iteration_match = False
+        status_match = False
+        for field_value in field_values:
+            # Check iteration
+            if 'title' in field_value:
+                print(normalize_text(field_value.get('title')), normalize_text(sprint_name), normalize_text(field_value.get('title')) == normalize_text(sprint_name), sprint_name in field_value.get('title'), field_value.get('title') in sprint_name)
+                print(field_value.get('title'))
+                print(sprint_name)
+                if normalize_text(field_value.get('title')) == normalize_text(sprint_name):
+                    iteration_match = True
+            # Check status
+            if 'field' in field_value and field_value['field']['name'].lower() == 'status':
+                status_val = field_value.get('name') or field_value.get('text')
+                if status_val and status_val.lower() == status_filter.lower():
+                    status_match = True
+        print(iteration_match, status_match)
+        return iteration_match and status_match
+
     for item in items:
         if not item['content']:
             continue
-            
+
         content = item['content']
-        
+
         # Skip pull requests if you only want issues
         if 'url' in content and '/pull/' in content['url']:
             continue
-        
-        # Find the status field value
-        item_status = None
-        for field_value in item['fieldValues']['nodes']:
-            if field_value and 'field' in field_value:
-                field_name = field_value['field']['name'].lower()
-                if 'status' in field_name:
-                    if 'name' in field_value:  # SingleSelect field
-                        item_status = field_value['name']
-                    elif 'text' in field_value:  # Text field
-                        item_status = field_value['text']
-                    break
-        
-        # Filter by status (project status field)
-        if item_status and item_status.lower() == status_filter.lower():
+
+        field_values = item['fieldValues']['nodes']
+        if has_matching_iteration_and_status(field_values, sprint_name, status_filter):
             filtered_issues.append({
                 'item': item,
                 'content': content,
-                'status': item_status,
+                'status': status_filter,
                 'issue_state': content.get('state', 'UNKNOWN')
             })
     
