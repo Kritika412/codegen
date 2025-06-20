@@ -603,42 +603,16 @@ function App() {
         {/* Active Agent Tasks */}
         <section className="bg-white p-6 rounded-xl shadow">
           <h3 className="text-xl font-semibold mb-4">Running Tasks (Agents)</h3>
-          <ul className="space-y-4">
-            {mockAgentTasks.map((task) => (
-              <li key={task.id} className="border p-4 rounded-md bg-gray-50">
-                <div className="flex justify-between">
-                  <div>
-                    <p className="font-medium">{task.agent === 'claude' ? 'Claude is working on:' : 'Codex refactoring:'} {task.description}</p>
-                    <p className="text-sm text-gray-500">
-                      Status: <span className={task.status === 'running' ? 'text-yellow-500' : 'text-green-600'}>{task.status === 'running' ? 'Running' : 'Done'}</span>
-                    </p>
-                  </div>
-                  <a href="#" className="text-blue-600 hover:underline">View PR</a>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <div className="text-gray-400 text-center py-8">
+            🚧 This feature is under development.
+          </div>
         </section>
 
         {/* PR Feed */}
         <section className="bg-white p-6 rounded-xl shadow">
           <h3 className="text-xl font-semibold mb-4">Pull Requests</h3>
-          <div className="space-y-4">
-            {mockPullRequests.map((pr) => (
-              <div key={pr.id} className="border p-4 rounded-md bg-gray-50">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="font-medium">[#{pr.id}] {pr.title}</p>
-                    <p className="text-sm text-gray-500">Author: {pr.author} | Branch: `{pr.branch}`</p>
-                  </div>
-                  <span className={`px-2 py-1 text-xs rounded ${
-                    pr.status === 'ci-passed' ? 'bg-green-100 text-green-600' : 'bg-yellow-100 text-yellow-600'
-                  }`}>
-                    {pr.status === 'ci-passed' ? 'CI Passed' : 'Needs Review'}
-                  </span>
-                </div>
-              </div>
-            ))}
+          <div className="text-gray-400 text-center py-8">
+            🚧 This feature is under development.
           </div>
         </section>
       </div>
