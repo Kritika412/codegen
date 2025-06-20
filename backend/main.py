@@ -16,8 +16,8 @@ load_dotenv()
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")
 token = GITHUB_TOKEN
-username =  'hail007' 
-project_number = 2
+org = 'harmoniaailabs'  # Changed from username to organization
+project_number = 5  # Updated project number
 
 if not GITHUB_TOKEN:
     raise ValueError("GITHUB_TOKEN not found in environment variables")
@@ -38,7 +38,7 @@ app.add_middleware(
 
 # Pydantic models
 class Issue(BaseModel):
-    id: int
+    id: str  # GitHub IDs are strings, not integers
     number: int
     title: str
     assignee: Optional[str]
@@ -57,107 +57,54 @@ class Sprint(BaseModel):
 
 class PromptRequest(BaseModel):
     prompt: str
-    repo: str  # Add this field
-
-# Sprint helpers
-def parse_sprint_dates(sprint_name: str) -> tuple[datetime, datetime]:
-    try:
-        date_part = sprint_name.split(":")[1].strip()
-        if "–" in date_part:
-            start_str, end_str = date_part.split("–")
-        elif "-" in date_part:
-            start_str, end_str = date_part.split("-")
-        else:
-            raise ValueError("Invalid date format")
-        start_str = start_str.strip()
-        end_str = end_str.strip()
-        current_year = datetime.now().year
-        month_map = {
-            "January": 1, "February": 2, "March": 3, "April": 4,
-            "May": 5, "June": 6, "July": 7, "August": 8,
-            "September": 9, "October": 10, "November": 11, "December": 12
-        }
-        start_parts = start_str.split()
-        start_month = month_map[start_parts[0]]
-        start_day = int(start_parts[1])
-        end_parts = end_str.split()
-        if len(end_parts) == 1:
-            end_month = start_month
-            end_day = int(end_parts[0])
-        else:
-            end_month = month_map[end_parts[0]]
-            end_day = int(end_parts[1])
-        return datetime(current_year, start_month, start_day), datetime(current_year, end_month, end_day)
-    except Exception as e:
-        print(f"Error parsing sprint dates from '{sprint_name}': {e}")
-        now = datetime.now()
-        return now, now + timedelta(days=7)
-
-def issue_in_sprint_period(issue, start: datetime, end: datetime) -> bool:
-    created = issue.created_at.replace(tzinfo=None)
-    updated = issue.updated_at.replace(tzinfo=None)
-    if start <= created <= end or start <= updated <= end:
-        return True
-    if issue.milestone and issue.milestone.due_on:
-        due = issue.milestone.due_on.replace(tzinfo=None)
-        return start <= due <= end
-    return False
-
-# Routes
-@app.get("/")
-def root():
-    return {"message": "Harmonia Agile Agentic Framework API"}
-
-import requests
-from typing import List, Optional
-from fastapi import HTTPException
-from dataclasses import dataclass
-
-@dataclass
-class Issue:
-    id: str
-    number: int
-    title: str
-    assignee: Optional[str]
-    status: str
-    created_at: str
-    updated_at: str
-    body: Optional[str]
-    labels: List[str]
     repo: str
 
+# Helper functions
 def normalize_text(text):
-    # Replace en dash (–) and em dash (—) with regular hyphen (-)
+    """Normalize text by replacing unicode dashes and normalizing characters"""
     text = text.replace('–', '-').replace('—', '-')
-    # You can also normalize other unicode characters
     text = unicodedata.normalize('NFKD', text)
     return text.strip()
 
-def get_project_issues_by_sprint_and_status(token: str, username: str, project_number: int, 
-                                          sprint_name: str, status_filter: str = "Todo") -> List[dict]:
+def extract_sprint_number(sprint_name: str) -> Optional[str]:
+    """Extract sprint number from sprint name like 'Sprint 1', 'Sprint 2', etc."""
+    match = re.match(r"Sprint\s+(\d+)", sprint_name, re.IGNORECASE)
+    return match.group(1) if match else None
+
+def get_project_issues_by_sprint_and_status(token: str, org: str, project_number: int, 
+                                          sprint_name: str, status_filter: str = "Ready") -> List[dict]:
     """
-    Get issues from a specific sprint view with a specific status from GitHub Projects.
+    Get issues from a specific sprint with a specific status from GitHub Projects (Organization).
     
     Args:
         token: GitHub personal access token
-        username: GitHub username  
+        org: GitHub organization name
         project_number: Project number
         sprint_name: Name of the sprint view (e.g., "Sprint 34: June 14 – June 17")
-        status_filter: Status to filter by (default: "Todo")
+        status_filter: Status to filter by (default: "Ready")
     
     Returns:
         List of issue dictionaries
     """
     url = "https://api.github.com/graphql"
     
-    print(f"DEBUG: Looking for sprint '{sprint_name}' in project {project_number} for user {username}")
+    print(f"DEBUG: Looking for sprint '{sprint_name}' in project {project_number} for org {org}")
     
-    # First, find the view ID for the sprint
-    query_views = """
-    query($login: String!, $number: Int!) {
-        user(login: $login) {
+    # Extract sprint number for iteration matching
+    sprint_number = extract_sprint_number(sprint_name)
+    if not sprint_number:
+        raise Exception(f"Could not extract sprint number from '{sprint_name}'")
+    
+    expected_iteration = f"Iteration {sprint_number}"
+    print(f"DEBUG: Looking for iteration '{expected_iteration}'")
+    
+    # First, get the project and its views
+    query_project = """
+    query($org: String!, $number: Int!) {
+        organization(login: $org) {
             projectV2(number: $number) {
                 id
+                title
                 views(first: 50) {
                     nodes {
                         id
@@ -175,46 +122,48 @@ def get_project_issues_by_sprint_and_status(token: str, username: str, project_n
     }
     
     data = {
-        "query": query_views,
+        "query": query_project,
         "variables": {
-            "login": username,
+            "org": org,
             "number": project_number
         }
     }
     
     try:
         response = requests.post(url, headers=headers, json=data)
-        response.raise_for_status()  # Raises exception for bad status codes
+        response.raise_for_status()
         result = response.json()
         
         print(f"DEBUG: GraphQL response: {result}")
         
     except requests.exceptions.RequestException as e:
-        raise Exception(f"Network error when fetching views: {str(e)}")
+        raise Exception(f"Network error when fetching project: {str(e)}")
     except Exception as e:
-        raise Exception(f"Error parsing response when fetching views: {str(e)}")
+        raise Exception(f"Error parsing response when fetching project: {str(e)}")
     
     if 'errors' in result:
         raise Exception(f"GraphQL errors: {result['errors']}")
         
-    if 'data' not in result or not result['data']['user'] or not result['data']['user']['projectV2']:
+    if 'data' not in result or not result['data']['organization'] or not result['data']['organization']['projectV2']:
         raise Exception(f"Project not found or not accessible. Response: {result}")
     
-    # Find the sprint view
-    sprint_view_id = None
+    project_id = result['data']['organization']['projectV2']['id']
+    
+    # Verify the sprint view exists
     available_views = []
-    for view in result['data']['user']['projectV2']['views']['nodes']:
+    sprint_view_found = False
+    for view in result['data']['organization']['projectV2']['views']['nodes']:
         available_views.append(view['name'])
         if view['name'] == sprint_name:
-            sprint_view_id = view['id']
+            sprint_view_found = True
             break
     
-    if not sprint_view_id:
+    if not sprint_view_found:
         raise Exception(f"Sprint view '{sprint_name}' not found. Available views: {available_views}")
     
-    print(f"DEBUG: Found sprint view ID: {sprint_view_id}")
+    print(f"DEBUG: Found sprint view: {sprint_name}")
     
-    # Now get items from the specific view with their field values
+    # Now get items from the project with their field values
     query_items = """
     query($projectId: ID!) {
         node(id: $projectId) {
@@ -322,7 +271,7 @@ def get_project_issues_by_sprint_and_status(token: str, username: str, project_n
     
     data = {
         "query": query_items,
-        "variables": {"projectId": result['data']['user']['projectV2']['id']}
+        "variables": {"projectId": project_id}
     }
     
     try:
@@ -343,27 +292,42 @@ def get_project_issues_by_sprint_and_status(token: str, username: str, project_n
     if 'data' not in items_result or not items_result['data']['node']:
         raise Exception(f"Failed to fetch project items. Response: {items_result}")
     
-    # Filter items by status
+    # Filter items by iteration and status
     filtered_issues = []
     items = items_result['data']['node']['items']['nodes']
 
-    def has_matching_iteration_and_status(field_values, sprint_name, status_filter):
+    def has_matching_iteration_and_status(field_values, expected_iteration, status_filter):
         iteration_match = False
         status_match = False
+        
+        print(f"DEBUG: Checking {len(field_values)} field values")
+        
         for field_value in field_values:
-            # Check iteration
+            # Debug: Print all field values to understand structure
+            if 'field' in field_value:
+                field_name = field_value['field'].get('name', 'Unknown')
+                print(f"DEBUG: Field '{field_name}': {field_value}")
+            
+            # Check iteration - look for "Iteration {num}" format
             if 'title' in field_value:
-                print(normalize_text(field_value.get('title')), normalize_text(sprint_name), normalize_text(field_value.get('title')) == normalize_text(sprint_name), sprint_name in field_value.get('title'), field_value.get('title') in sprint_name)
-                print(field_value.get('title'))
-                print(sprint_name)
-                if normalize_text(field_value.get('title')) == normalize_text(sprint_name):
+                iteration_title = normalize_text(field_value.get('title', ''))
+                expected_iter_normalized = normalize_text(expected_iteration)
+                print(f"DEBUG: Comparing iteration '{iteration_title}' with expected '{expected_iter_normalized}'")
+                if iteration_title == expected_iter_normalized:
                     iteration_match = True
-            # Check status
-            if 'field' in field_value and field_value['field']['name'].lower() == 'status':
-                status_val = field_value.get('name') or field_value.get('text')
-                if status_val and status_val.lower() == status_filter.lower():
-                    status_match = True
-        print(iteration_match, status_match)
+                    print(f"DEBUG: Found matching iteration: {iteration_title}")
+            
+            # Check status - look for "Ready" status
+            if 'field' in field_value and field_value['field'].get('name'):
+                field_name = field_value['field']['name'].lower()
+                if field_name == 'status':
+                    status_val = field_value.get('name') or field_value.get('text')
+                    print(f"DEBUG: Found status field with value: '{status_val}'")
+                    if status_val and status_val.lower() == status_filter.lower():
+                        status_match = True
+                        print(f"DEBUG: Found matching status: {status_val}")
+        
+        print(f"DEBUG: Iteration match: {iteration_match}, Status match: {status_match}")
         return iteration_match and status_match
 
     for item in items:
@@ -377,7 +341,7 @@ def get_project_issues_by_sprint_and_status(token: str, username: str, project_n
             continue
 
         field_values = item['fieldValues']['nodes']
-        if has_matching_iteration_and_status(field_values, sprint_name, status_filter):
+        if has_matching_iteration_and_status(field_values, expected_iteration, status_filter):
             filtered_issues.append({
                 'item': item,
                 'content': content,
@@ -385,7 +349,13 @@ def get_project_issues_by_sprint_and_status(token: str, username: str, project_n
                 'issue_state': content.get('state', 'UNKNOWN')
             })
     
+    print(f"DEBUG: Found {len(filtered_issues)} issues matching criteria")
     return filtered_issues
+
+# Routes
+@app.get("/")
+def root():
+    return {"message": "Harmonia Agile Agentic Framework API"}
 
 @app.get("/api/issues", response_model=List[Issue])
 def get_issues(sprint_name: Optional[str] = None):
@@ -396,24 +366,19 @@ def get_issues(sprint_name: Optional[str] = None):
         sprint_name: Name of the sprint view to filter by
     
     Returns:
-        List of issues with "Todo" status from the specified sprint
+        List of issues with "Ready" status from the specified sprint iteration
     """
     try:
-        # GitHub Projects configuration
-        #token = "your_github_token"  # Replace with your token
-        username = "hail007"  # Replace with your username
-        project_number = 2  # Replace with your project number
-        
         if not sprint_name:
             raise HTTPException(status_code=400, detail="sprint_name parameter is required")
         
-        # Get issues from the specific sprint with "Todo" status
+        # Get issues from the specific sprint with "Ready" status
         filtered_issues = get_project_issues_by_sprint_and_status(
             token=token,
-            username=username,
+            org=org,
             project_number=project_number,
             sprint_name=sprint_name,
-            status_filter="Todo"
+            status_filter="Ready"
         )
         
         results = []
@@ -444,7 +409,7 @@ def get_issues(sprint_name: Optional[str] = None):
                 number=content.get('number', 0),  # Draft issues might not have numbers
                 title=content['title'],
                 assignee=assignee,
-                status="todo",  # We filtered for "Todo" status
+                status="ready",  # We filtered for "Ready" status
                 created_at=content.get('createdAt', ''),
                 updated_at=content.get('updatedAt', ''),
                 body=content.get('body', ''),
@@ -454,7 +419,7 @@ def get_issues(sprint_name: Optional[str] = None):
             
             results.append(issue)
         
-        print(f"Found {len(results)} issues in sprint '{sprint_name}' with 'Todo' status")
+        print(f"Found {len(results)} issues in sprint '{sprint_name}' with 'Ready' status")
         return results
         
     except Exception as e:
@@ -464,24 +429,11 @@ def get_issues(sprint_name: Optional[str] = None):
         print(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Issue fetch error: {str(e)}")
 
-
-#@app.get("/api/sprints", response_model=List[Sprint])
-def get_sprints():
-    return [
-        Sprint(id="sprint34", name="Sprint 34: June 14 – June 17", start_date="2025-06-14", end_date="2025-06-17"),
-        Sprint(id="sprint33", name="Sprint 33: June 10 – June 13", start_date="2025-06-10", end_date="2025-06-13"),
-        Sprint(id="sprint32", name="Sprint 32: June 6 – June 9", start_date="2025-06-06", end_date="2025-06-09")
-    ]
-
 @app.get("/api/sprints", response_model=List[Sprint])
-def get_sprints_() -> List[Sprint]:
+def get_sprints() -> List[Sprint]:
     """
-    Get all sprint views from a GitHub project and parse them into Sprint objects.
-    
-    Args:
-        token: GitHub personal access token
-        username: GitHub username
-        project_number: Project number (e.g., 2 for /projects/2)
+    Get all sprint views from a GitHub organization project and parse them into Sprint objects.
+    Only returns views that start with "Sprint".
     
     Returns:
         List of Sprint objects sorted by sprint number (descending)
@@ -489,8 +441,8 @@ def get_sprints_() -> List[Sprint]:
     url = "https://api.github.com/graphql"
     
     query = """
-    query($login: String!, $number: Int!) {
-        user(login: $login) {
+    query($org: String!, $number: Int!) {
+        organization(login: $org) {
             projectV2(number: $number) {
                 id
                 title
@@ -514,68 +466,67 @@ def get_sprints_() -> List[Sprint]:
     data = {
         "query": query,
         "variables": {
-            "login": username,
+            "org": org,
             "number": project_number
         }
     }
     
-    response = requests.post(url, headers=headers, json=data)
-    result = response.json()
-    
-    if 'data' not in result or not result['data']['user'] or not result['data']['user']['projectV2']:
-        print("Project not found or not accessible")
-        return []
-    
-    views = result['data']['user']['projectV2']['views']['nodes']
-    sprints = []
-    
-    # Regex pattern to match "Sprint 34: June 14 – June 17" format
-    sprint_pattern = r"Sprint\s+(\d+):\s+(\w+\s+\d+)\s+[–-]\s+(\w+\s+\d+)"
-    
-    for view in views:
-        view_name = view['name']
-        match = re.match(sprint_pattern, view_name, re.IGNORECASE)
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        result = response.json()
         
-        if match:
-            sprint_number = match.group(1)
-            start_date_str = match.group(2)  # "June 14"
-            end_date_str = match.group(3)    # "June 17"
+        if 'errors' in result:
+            raise HTTPException(status_code=500, detail=f"GraphQL errors: {result['errors']}")
             
-            # Parse dates - assuming current year (2025)
-            current_year = 2025
+        if 'data' not in result or not result['data']['organization'] or not result['data']['organization']['projectV2']:
+            raise HTTPException(status_code=404, detail="Project not found or not accessible")
+        
+        views = result['data']['organization']['projectV2']['views']['nodes']
+        sprints = []
+        
+        # Simple pattern to match "Sprint 1", "Sprint 2", etc.
+        sprint_pattern = r"Sprint\s+(\d+)$"
+        
+        for view in views:
+            view_name = view['name']
             
-            try:
-                # Parse start date
-                start_date_obj = datetime.strptime(f"{start_date_str} {current_year}", "%B %d %Y")
-                start_date = start_date_obj.strftime("%Y-%m-%d")
+            # Only process views that start with "Sprint"
+            if not view_name.startswith("Sprint"):
+                continue
                 
-                # Parse end date
-                end_date_obj = datetime.strptime(f"{end_date_str} {current_year}", "%B %d %Y")
-                end_date = end_date_obj.strftime("%Y-%m-%d")
+            match = re.match(sprint_pattern, view_name, re.IGNORECASE)
+            
+            if match:
+                sprint_number = match.group(1)
                 
-                # Create Sprint object
+                # Create Sprint object with minimal date info (can be updated later if needed)
                 sprint = Sprint(
                     id=f"sprint{sprint_number}",
                     name=view_name,
-                    start_date=start_date,
-                    end_date=end_date
+                    start_date="",  # No date parsing needed for simple format
+                    end_date=""     # No date parsing needed for simple format
                 )
                 
                 sprints.append(sprint)
-                
-            except ValueError as e:
-                print(f"Error parsing dates for sprint '{view_name}': {e}")
-                continue
-    
-    # Sort by sprint number (descending - newest first)
-    sprints.sort(key=lambda s: int(s.id.replace("sprint", "")), reverse=True)
-    
-    return sprints
+        
+        # Sort by sprint number (descending - newest first)
+        sprints.sort(key=lambda s: int(s.id.replace("sprint", "")), reverse=True)
+        
+        return sprints
+        
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Network error: {str(e)}")
+    except Exception as e:
+        print(f"Error in get_sprints: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Sprint fetch error: {str(e)}")
 
 @app.post("/api/run-codex")
 async def run_codex(prompt_req: PromptRequest):
+    """Run the codex with the provided prompt and repository"""
     try:
-        # Now you can use prompt_req.repo
         subprocess.Popen(["python", "run_codex_todo.py", prompt_req.prompt, prompt_req.repo])
         return {"message": "Codex started"}
     except Exception as e:
@@ -583,6 +534,7 @@ async def run_codex(prompt_req: PromptRequest):
 
 @app.get("/api/pull-requests")
 def get_pull_requests():
+    """Get open pull requests from the configured repository"""
     try:
         repo = g.get_repo(GITHUB_REPO)
         prs = repo.get_pulls(state="open", sort="created")
