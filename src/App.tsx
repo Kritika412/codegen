@@ -187,7 +187,8 @@ useEffect(() => {
           status: issue.status,
           body: issue.body || '',
           repo: issue.repo,
-          number: issue.number, // keep number for display
+          number: issue.number,
+          url: issue.url, // keep number for display
         }))
       : [];
 
@@ -400,24 +401,38 @@ useEffect(() => {
         </section>
 
         {/* Issues List */}
-        <section className="bg-white p-6 rounded-xl shadow">
-          <h3 className="text-xl font-semibold mb-4">Sprint Issues</h3>
-          <div className="space-y-4">
-            {displayIssues.length === 0 ? (
-              <div className="text-gray-400 text-center">No issues for this sprint.</div>
-            ) : (
-              displayIssues.map((issue) => (
-                <div key={issue.id} className="border p-4 rounded-md flex justify-between items-center bg-gray-50">
-                  <div>
-                    <p className="font-medium">[{issue.repo}] [#{issue.number}] {issue.title}</p>
-                    <p className="text-sm text-gray-500">Assigned to: {issue.assignee}</p>
-                  </div>
-                  <a href="#" className="text-blue-600 hover:underline">View on GitHub</a>
-                </div>
-              ))
-            )}
+<section className="bg-white p-6 rounded-xl shadow">
+  <h3 className="text-xl font-semibold mb-4">Sprint Issues</h3>
+  <div className="space-y-4">
+    {displayIssues.length === 0 ? (
+      <div className="text-gray-400 text-center">No issues for this sprint.</div>
+    ) : (
+      displayIssues.map((issue) => (
+        <div key={issue.id} className="border p-4 rounded-md flex justify-between items-center bg-gray-50">
+          <div>
+            <p className="font-medium">[{issue.repo}] [#{issue.number}] {issue.title}</p>
+            <p className="text-sm text-gray-500">
+              Assigned to: {issue.assignee ?? 'Unassigned'}
+            </p>
           </div>
-        </section>
+          {/* Fixed: Use the actual GitHub URL from the API */}
+          {issue.url ? (
+            <a 
+              href={issue.url} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              View on GitHub
+            </a>
+          ) : (
+            <span className="text-gray-400">No GitHub link</span>
+          )}
+        </div>
+      ))
+    )}
+  </div>
+</section>
 
         {/* Active Agent Tasks */}
         <section className="bg-white p-6 rounded-xl shadow">

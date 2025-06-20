@@ -1,6 +1,7 @@
 const API_BASE_URL =  'http://localhost:8000/api';
 // 'https://czkkuw93y9.us-east-1.awsapprunner.com/api';
 export interface ApiIssue {
+  url: any;
   repository: any;
   repo: any;
   id: number;
