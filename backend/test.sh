@@ -2,7 +2,7 @@
 
 echo "Testing FastAPI backend..."
 
-# 서버가 실행 중인지 확인
+# Check if server is running
 echo "1. Testing root endpoint:"
 curl -s http://localhost:8000/ || echo "Server not running on port 8000"
 

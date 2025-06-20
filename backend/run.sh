@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Virtual environment 활성화
+# Activate virtual environment
 source venv/bin/activate
 
-# FastAPI 개발 서버 실행
+# Run FastAPI development server
 uvicorn main:app --reload --host 0.0.0.0 --port 8000

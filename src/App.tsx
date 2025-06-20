@@ -4,7 +4,7 @@ import './App.css';
 import { apiClient } from './api/client';
 import type { ApiIssue, ApiSprint } from './api/client';
 
-// 모든 데이터를 인라인으로 정의 (types 의존성 제거)
+// Define all data inline (remove types dependency)
 const mockSprints = [
   {
     id: 'sprint1',
@@ -107,7 +107,7 @@ function App() {
   const [originalIssueDescription, setOriginalIssueDescription] = useState(''); // NEW: Track original
   const [selectedLLM, setSelectedLLM] = useState('codex');
   
-  // API 상태
+  // API state
   const [sprints, setSprints] = useState<ApiSprint[]>([]);
   const [issues, setIssues] = useState<ApiIssue[]>([]);
   const [sprintSummary, setSprintSummary] = useState<SprintSummary | null>(null);
@@ -157,7 +157,7 @@ function App() {
     }
   };
 
-  // Sprint 목록을 가져오는 함수 정의
+  // Function to fetch sprint list
   const fetchSprints = async () => {
     setLoading(true);
     setError(null);
@@ -175,7 +175,7 @@ function App() {
     }
   };
 
-  // 컴포넌트 마운트 시 데이터 초기화
+  // Initialize data when component mounts
   useEffect(() => {
     const initializeData = async () => {
       await fetchSprints();
@@ -184,7 +184,7 @@ function App() {
     initializeData();
   }, []);
 
-  // Sprint 변경 시 해당 기간 이슈 가져오기
+  // Fetch issues for the period when sprint changes
   useEffect(() => {
     if (!useMockData && selectedSprint && sprints.length > 0) {
       const currentSprint = sprints.find(s => s.id === selectedSprint);
@@ -217,7 +217,7 @@ function App() {
     }
   };
   
-  // 현재 표시할 데이터 선택
+  // Select data to display currently
   const displaySprints = useMockData ? mockSprints : sprints.length > 0 ? sprints.map(s => ({
     id: s.id,
     name: s.name,
@@ -389,7 +389,7 @@ function App() {
           </div>
         )}
 
-        {/* 에러 메시지 */}
+        {/* Error message */}
         {error && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
             <div className="text-sm text-yellow-700">
@@ -398,7 +398,7 @@ function App() {
           </div>
         )}
         
-        {/* 로딩 인디케이터 */}
+        {/* Loading indicator */}
         {loading && (
           <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
             <div className="text-sm text-blue-700">

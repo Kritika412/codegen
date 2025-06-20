@@ -1,15 +1,15 @@
 #!/bin/bash
 
-# Virtual environment 생성 (없으면)
+# Create virtual environment (if it doesn't exist)
 if [ ! -d "venv" ]; then
     python3 -m venv venv
     echo "Virtual environment created"
 fi
 
-# Virtual environment 활성화
+# Activate virtual environment
 source venv/bin/activate
 
-# 의존성 설치
+# Install dependencies
 pip install -r requirements.txt
 
 echo "Backend dependencies installed!"
