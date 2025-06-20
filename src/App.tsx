@@ -85,95 +85,144 @@ const mockStats = {
   blocked: 2,
 };
 
+// Interfaces for Sprint Summary
+interface SprintSummary {
+  current_sprint: string;
+  start_date: string;
+  end_date: string;
+  days_remaining: number;
+  sprint_goals: string;
+  total_issues: number;
+  backlog: number;
+  ready: number;
+  in_progress: number;
+  in_review: number;
+}
+
 function App() {
+  // FIXED: State declarations with proper separation
   const [selectedSprint, setSelectedSprint] = useState('sprint1');
   const [selectedIssue, setSelectedIssue] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
+  const [originalIssueDescription, setOriginalIssueDescription] = useState(''); // NEW: Track original
   const [selectedLLM, setSelectedLLM] = useState('codex');
   
   // API 상태
   const [sprints, setSprints] = useState<ApiSprint[]>([]);
   const [issues, setIssues] = useState<ApiIssue[]>([]);
+  const [sprintSummary, setSprintSummary] = useState<SprintSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Issue editing states
+  const [isUpdatingIssue, setIsUpdatingIssue] = useState(false);
+  const [updateSuccess, setUpdateSuccess] = useState<string | null>(null);
   
   // Mock data fallback
   const [useMockData, setUseMockData] = useState(false);
   
   const fetchIssues = async (sprintName?: string) => {
-  // Don't fetch issues if no sprint name is provided
-  if (!sprintName) {
-    console.log('No sprint name provided, skipping issue fetch');
-    return;
-  }
-  
-  setLoading(true);
-  setError(null);
-  try {
-    const issueData = await apiClient.getIssues(sprintName);
-    setIssues(issueData);
-    if (issueData.length > 0 && !selectedIssue) {
-      setSelectedIssue(issueData[0].number.toString());
+    // Don't fetch issues if no sprint name is provided
+    if (!sprintName) {
+      console.log('No sprint name provided, skipping issue fetch');
+      return;
     }
-  } catch (error) {
-    console.warn('Failed to fetch issues:', error);
-    setError('Failed to fetch issues from GitHub. Using mock data.');
-    setUseMockData(true);
-  } finally {
-    setLoading(false);
-  }
-};
-
-// Sprint 목록을 가져오는 함수 정의
-const fetchSprints = async () => {
-  setLoading(true);
-  setError(null);
-  try {
-    const sprintData = await apiClient.getSprints();
-    setSprints(sprintData);
-    setUseMockData(false);
-  } catch (error) {
-    console.warn('Failed to fetch sprints:', error);
-    setError('Failed to fetch sprints from GitHub. Using mock data.');
-    setUseMockData(true);
-    setSprints([]); // fallback to mockSprints in displaySprints
-  } finally {
-    setLoading(false);
-  }
-};
-
-// 컴포넌트 마운트 시 데이터 초기화
-useEffect(() => {
-  const initializeData = async () => {
-    await fetchSprints();
-    // Don't fetch issues immediately - wait for sprint selection
+    
+    setLoading(true);
+    setError(null);
+    try {
+      const issueData = await apiClient.getIssues(sprintName);
+      setIssues(issueData);
+    } catch (error) {
+      console.warn('Failed to fetch issues:', error);
+      setError('Failed to fetch issues from GitHub. Using mock data.');
+      setUseMockData(true);
+    } finally {
+      setLoading(false);
+    }
   };
-  initializeData();
-}, []);
 
-// Sprint 변경 시 해당 기간 이슈 가져오기
-useEffect(() => {
-  if (!useMockData && selectedSprint && sprints.length > 0) {
-    const currentSprint = sprints.find(s => s.id === selectedSprint);
-    if (currentSprint) {
-      fetchIssues(currentSprint.name);
+  // Fetch sprint summary
+  const fetchSprintSummary = async (sprintName: string) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/sprint-summary?sprint_name=${encodeURIComponent(sprintName)}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      const summary = await response.json();
+      setSprintSummary(summary);
+    } catch (error) {
+      console.error('Error fetching sprint summary:', error);
+      setSprintSummary(null);
     }
-  }
-}, [selectedSprint, sprints, useMockData]);
+  };
 
-// Make sure we have a selected sprint when sprints are loaded
-useEffect(() => {
-  if (sprints.length > 0 && !selectedSprint) {
-    setSelectedSprint(sprints[0].id);
-  }
-}, [sprints, selectedSprint]);
+  // Sprint 목록을 가져오는 함수 정의
+  const fetchSprints = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const sprintData = await apiClient.getSprints();
+      setSprints(sprintData);
+      setUseMockData(false);
+    } catch (error) {
+      console.warn('Failed to fetch sprints:', error);
+      setError('Failed to fetch sprints from GitHub. Using mock data.');
+      setUseMockData(true);
+      setSprints([]); // fallback to mockSprints in displaySprints
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 컴포넌트 마운트 시 데이터 초기화
+  useEffect(() => {
+    const initializeData = async () => {
+      await fetchSprints();
+      // Don't fetch issues immediately - wait for sprint selection
+    };
+    initializeData();
+  }, []);
+
+  // Sprint 변경 시 해당 기간 이슈 가져오기
+  useEffect(() => {
+    if (!useMockData && selectedSprint && sprints.length > 0) {
+      const currentSprint = sprints.find(s => s.id === selectedSprint);
+      if (currentSprint) {
+        fetchIssues(currentSprint.name);
+        fetchSprintSummary(currentSprint.name);
+      }
+    }
+  }, [selectedSprint, sprints, useMockData]);
+
+  // Make sure we have a selected sprint when sprints are loaded
+  useEffect(() => {
+    if (sprints.length > 0 && !selectedSprint) {
+      setSelectedSprint(sprints[0].id);
+    }
+  }, [sprints, selectedSprint]);
+  
+  // Helper function to format dates
+  const formatDate = (dateString: string): string => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric'
+      });
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return dateString;
+    }
+  };
   
   // 현재 표시할 데이터 선택
   const displaySprints = useMockData ? mockSprints : sprints.length > 0 ? sprints.map(s => ({
     id: s.id,
     name: s.name,
-    dateRange: `${s.start_date} – ${s.end_date}`,
-    daysRemaining: Math.max(0, Math.ceil((new Date(s.end_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))),
+    dateRange: s.start_date && s.end_date ? `${formatDate(s.start_date)} – ${formatDate(s.end_date)}` : s.name,
+    daysRemaining: s.end_date ? Math.max(0, Math.ceil((new Date(s.end_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))) : 0,
     goals: 'Sprint goals from API'
   })) : mockSprints;
   
@@ -219,35 +268,127 @@ useEffect(() => {
     }
   };
   
-  
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    console.log('Saving changes:', { selectedIssue, issueDescription, selectedLLM });
+  // FIXED: Handle issue selection changes properly
+  const handleIssueSelectionChange = (issueId: string) => {
+    setSelectedIssue(issueId);
+    const issue = displayIssues.find(issue => issue.id === issueId);
+    if (issue) {
+      const description = issue.body || '';
+      setIssueDescription(description);
+      setOriginalIssueDescription(description);
+    } else {
+      setIssueDescription('');
+      setOriginalIssueDescription('');
+    }
   };
 
-  // Ensure initial issue description is set when issues are loaded
+  // FIXED: Handle saving issue description changes
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!selectedIssue || !issueDescription.trim()) {
+      alert('Please select an issue and provide a description.');
+      return;
+    }
+
+    const issue = displayIssues.find(issue => issue.id === selectedIssue);
+    if (!issue) {
+      alert('Selected issue not found.');
+      return;
+    }
+
+    setIsUpdatingIssue(true);
+    setError(null);
+    setUpdateSuccess(null);
+
+    try {
+      const response = await fetch(
+        `http://localhost:8000/api/issues/${issue.number}?repo_name=${encodeURIComponent(issue.repo)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            body: issueDescription.trim()
+          })
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('Issue updated:', result);
+
+      // Update local state
+      setIssues(prevIssues =>
+        prevIssues.map(i =>
+          i.number === issue.number
+            ? { ...i, body: issueDescription.trim() }
+            : i
+        )
+      );
+
+      // Update the original description to the new saved value
+      setOriginalIssueDescription(issueDescription.trim());
+
+      setUpdateSuccess('Issue description updated successfully!');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setUpdateSuccess(null), 3000);
+      
+    } catch (error) {
+      console.error('Error updating issue:', error);
+      setError(`Failed to update issue: ${error}`);
+    } finally {
+      setIsUpdatingIssue(false);
+    }
+  };
+
+  // FIXED: Better useEffect for issue description handling
   useEffect(() => {
     if (displayIssues.length > 0) {
-      // If selectedIssue is not in the list, select the first one
+      // Only update if we don't have a selected issue or if the current selection is not in the new list
       const found = displayIssues.find(issue => issue.id.toString() === selectedIssue);
       if (!selectedIssue || !found) {
-        setSelectedIssue(displayIssues[0].id.toString());
-        setIssueDescription(displayIssues[0].body || '');
-      } else {
-        setIssueDescription(found.body || '');
+        const firstIssue = displayIssues[0];
+        setSelectedIssue(firstIssue.id.toString());
+        const description = firstIssue.body || '';
+        setIssueDescription(description);
+        setOriginalIssueDescription(description);
+      } else if (found) {
+        // Only update if the issue body has changed from an external source
+        // and we haven't made local changes
+        const currentDescription = found.body || '';
+        if (currentDescription !== originalIssueDescription && 
+            issueDescription === originalIssueDescription) {
+          setIssueDescription(currentDescription);
+          setOriginalIssueDescription(currentDescription);
+        }
       }
     } else {
       setIssueDescription('');
+      setOriginalIssueDescription('');
     }
-    // eslint-disable-next-line
-  }, [displayIssues, selectedIssue]);
+  }, [displayIssues]); // Removed selectedIssue from dependencies
 
   return (
     <div className="bg-gray-100 text-gray-900 min-h-screen">
       <Header />
       
       <div className="max-w-7xl mx-auto p-6 space-y-8">
+        {/* Success Message */}
+        {updateSuccess && (
+          <div className="bg-green-50 border border-green-200 rounded-md p-4">
+            <div className="text-sm text-green-700">
+              <strong>✅ {updateSuccess}</strong>
+            </div>
+          </div>
+        )}
+
         {/* 에러 메시지 */}
         {error && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
@@ -265,6 +406,7 @@ useEffect(() => {
             </div>
           </div>
         )}
+
         {/* Sprint Picker */}
         <section className="bg-white p-6 rounded-xl shadow border border-gray-200">
           <h2 className="text-xl font-semibold mb-2">Select Current Sprint</h2>
@@ -299,6 +441,7 @@ useEffect(() => {
         <section className="bg-indigo-50 p-6 rounded-xl shadow border border-indigo-200">
           <h2 className="text-xl font-semibold mb-2">Ask Codex or Claude for Help</h2>
           <form className="space-y-4" onSubmit={handleSave}>
+            {/* FIXED: Issue selection dropdown */}
             <div>
               <label htmlFor="issue-select" className="block text-sm font-medium text-gray-700">
                 Select Issue
@@ -306,7 +449,7 @@ useEffect(() => {
               <select
                 id="issue-select"
                 value={selectedIssue}
-                onChange={(e) => setSelectedIssue(e.target.value)}
+                onChange={(e) => handleIssueSelectionChange(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
               >
                 {displayIssues.map((issue) => (
@@ -317,6 +460,7 @@ useEffect(() => {
               </select>
             </div>
 
+            {/* FIXED: Issue description textarea with change indicator */}
             <div>
               <label htmlFor="issue-description" className="block text-sm font-medium text-gray-700">
                 Edit Issue Description
@@ -328,7 +472,14 @@ useEffect(() => {
                 onChange={(e) => setIssueDescription(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                 placeholder="Update or refine the issue details..."
+                disabled={isUpdatingIssue}
               />
+              {/* Show if there are unsaved changes */}
+              {issueDescription !== originalIssueDescription && (
+                <p className="text-xs text-orange-600 mt-1">
+                  * You have unsaved changes
+                </p>
+              )}
             </div>
 
             <div>
@@ -359,15 +510,17 @@ useEffect(() => {
                 type="button"
                 onClick={handleCode}
                 className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700"
+                disabled={isUpdatingIssue}
               >
                 Code
               </button>
+              {/* FIXED: Save button now works properly */}
               <button
                 type="submit"
-                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 opacity-50 cursor-not-allowed"
-                disabled
+                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                disabled={isUpdatingIssue || !issueDescription.trim()}
               >
-                Save Changes
+                {isUpdatingIssue ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </form>
@@ -375,64 +528,77 @@ useEffect(() => {
 
         {/* Sprint Info */}
         <section className="bg-white p-6 rounded-xl shadow">
-          <h2 className="text-2xl font-bold mb-2">Current Sprint: {currentSprint.dateRange}</h2>
-          <p className="text-gray-600">Days Remaining: <strong>{currentSprint.daysRemaining}</strong></p>
-          <p className="text-gray-600">Sprint Goals: {currentSprint.goals}</p>
+          <h2 className="text-2xl font-bold mb-2">
+            Current Sprint: {sprintSummary && sprintSummary.start_date && sprintSummary.end_date ? 
+              `${formatDate(sprintSummary.start_date)} - ${formatDate(sprintSummary.end_date)}` : 
+              currentSprint.dateRange
+            }
+          </h2>
+          <p className="text-gray-600">
+            Days Remaining: <strong>{sprintSummary ? sprintSummary.days_remaining : currentSprint.daysRemaining}</strong>
+          </p>
+          <p className="text-gray-600">
+            Sprint Goals: {sprintSummary ? sprintSummary.sprint_goals : currentSprint.goals}
+          </p>
         </section>
 
         {/* Sprint Status Summary */}
-        <section className="bg-white p-6 rounded-xl shadow grid grid-cols-2 md:grid-cols-4 gap-4">
+        <section className="bg-white p-6 rounded-xl shadow grid grid-cols-2 md:grid-cols-5 gap-4">
           <div className="text-center">
-            <div className="text-3xl font-bold">{mockStats.total}</div>
+            <div className="text-3xl font-bold">{sprintSummary ? sprintSummary.total_issues : mockStats.total}</div>
             <div className="text-sm text-gray-500">Total Issues</div>
           </div>
           <div className="text-center">
-            <div className="text-3xl font-bold text-green-600">{mockStats.completed}</div>
-            <div className="text-sm text-gray-500">Completed</div>
+            <div className="text-3xl font-bold text-gray-600">{sprintSummary ? sprintSummary.backlog : 0}</div>
+            <div className="text-sm text-gray-500">Backlog</div>
           </div>
           <div className="text-center">
-            <div className="text-3xl font-bold text-yellow-500">{mockStats.inProgress}</div>
+            <div className="text-3xl font-bold text-blue-600">{sprintSummary ? sprintSummary.ready : 0}</div>
+            <div className="text-sm text-gray-500">Ready</div>
+          </div>
+          <div className="text-center">
+            <div className="text-3xl font-bold text-yellow-500">{sprintSummary ? sprintSummary.in_progress : mockStats.inProgress}</div>
             <div className="text-sm text-gray-500">In Progress</div>
           </div>
           <div className="text-center">
-            <div className="text-3xl font-bold text-red-500">{mockStats.blocked}</div>
-            <div className="text-sm text-gray-500">Blocked</div>
+            <div className="text-3xl font-bold text-green-600">{sprintSummary ? sprintSummary.in_review : 0}</div>
+            <div className="text-sm text-gray-500">In Review</div>
           </div>
         </section>
 
         {/* Issues List */}
-<section className="bg-white p-6 rounded-xl shadow">
-  <h3 className="text-xl font-semibold mb-4">Sprint Issues</h3>
-  <div className="space-y-4">
-    {displayIssues.length === 0 ? (
-      <div className="text-gray-400 text-center">No issues for this sprint.</div>
-    ) : (
-      displayIssues.map((issue) => (
-        <div key={issue.id} className="border p-4 rounded-md flex justify-between items-center bg-gray-50">
-          <div>
-            <p className="font-medium">[{issue.repo}] [#{issue.number}] {issue.title}</p>
-            <p className="text-sm text-gray-500">
-              Assigned to: {issue.assignee ?? 'Unassigned'}
-            </p>
+        <section className="bg-white p-6 rounded-xl shadow">
+          <h3 className="text-xl font-semibold mb-4">Sprint Issues</h3>
+          <div className="space-y-4">
+            {displayIssues.length === 0 ? (
+              <div className="text-gray-400 text-center">No issues for this sprint.</div>
+            ) : (
+              displayIssues.map((issue) => (
+                <div key={issue.id} className="border p-4 rounded-md flex justify-between items-center bg-gray-50">
+                  <div>
+                    <p className="font-medium">[{issue.repo}] [#{issue.number}] {issue.title}</p>
+                    <p className="text-sm text-gray-500">
+                      Assigned to: {issue.assignee ?? 'Unassigned'}
+                    </p>
+                  </div>
+                  {/* Fixed: Use the actual GitHub URL from the API */}
+                  {issue.url ? (
+                    <a 
+                      href={issue.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                    >
+                      View on GitHub
+                    </a>
+                  ) : (
+                    <span className="text-gray-400">No GitHub link</span>
+                  )}
+                </div>
+              ))
+            )}
           </div>
-          {/* Fixed: Use the actual GitHub URL from the API */}
-          {issue.url ? (
-            <a 
-              href={issue.url} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-blue-600 hover:underline"
-            >
-              View on GitHub
-            </a>
-          ) : (
-            <span className="text-gray-400">No GitHub link</span>
-          )}
-        </div>
-      ))
-    )}
-  </div>
-</section>
+        </section>
 
         {/* Active Agent Tasks */}
         <section className="bg-white p-6 rounded-xl shadow">
