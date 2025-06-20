@@ -10,6 +10,8 @@ import os
 import requests
 import re
 import unicodedata
+import logging
+from logging.handlers import RotatingFileHandler
 
 # Load environment variables
 load_dotenv()
@@ -23,6 +25,53 @@ if not GITHUB_TOKEN:
     raise ValueError("GITHUB_TOKEN not found in environment variables")
 if not GITHUB_REPO:
     raise ValueError("GITHUB_REPO not found in environment variables")
+
+# Setup logging
+def setup_logging():
+    """Setup logging configuration with rotating file handler"""
+    # Create logs directory if it doesn't exist
+    logs_dir = "logs"
+    if not os.path.exists(logs_dir):
+        os.makedirs(logs_dir)
+    
+    # Create logger
+    logger = logging.getLogger("harmonia_api")
+    logger.setLevel(logging.DEBUG)
+    
+    # Remove existing handlers to avoid duplicates
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+    
+    # Prevent propagation to root logger (this stops console output)
+    logger.propagate = False
+    
+    # Create rotating file handler (max 10MB, keep 5 backup files)
+    file_handler = RotatingFileHandler(
+        os.path.join(logs_dir, "harmonia_api.log"),
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=5
+    )
+    file_handler.setLevel(logging.DEBUG)
+    
+    # Create console handler for errors and warnings only
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.WARNING)  # Changed from ERROR to WARNING
+    
+    # Create formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s'
+    )
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+    
+    # Add handlers to logger
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    return logger
+
+# Initialize logger
+logger = setup_logging()
 
 g = Github(GITHUB_TOKEN)
 app = FastAPI(title="Harmonia Agile Agentic Framework API")
@@ -88,7 +137,7 @@ def get_project_issues_by_sprint_and_status(token: str, org: str, project_number
     """
     url = "https://api.github.com/graphql"
     
-    print(f"DEBUG: Looking for sprint '{sprint_name}' in project {project_number} for org {org}")
+   
     
     # Extract sprint number for iteration matching
     sprint_number = extract_sprint_number(sprint_name)
@@ -96,7 +145,7 @@ def get_project_issues_by_sprint_and_status(token: str, org: str, project_number
         raise Exception(f"Could not extract sprint number from '{sprint_name}'")
     
     expected_iteration = f"Iteration {sprint_number}"
-    print(f"DEBUG: Looking for iteration '{expected_iteration}'")
+
     
     # First, get the project and its views
     query_project = """
@@ -134,7 +183,7 @@ def get_project_issues_by_sprint_and_status(token: str, org: str, project_number
         response.raise_for_status()
         result = response.json()
         
-        print(f"DEBUG: GraphQL response: {result}")
+
         
     except requests.exceptions.RequestException as e:
         raise Exception(f"Network error when fetching project: {str(e)}")
@@ -161,7 +210,7 @@ def get_project_issues_by_sprint_and_status(token: str, org: str, project_number
     if not sprint_view_found:
         raise Exception(f"Sprint view '{sprint_name}' not found. Available views: {available_views}")
     
-    print(f"DEBUG: Found sprint view: {sprint_name}")
+
     
     # Now get items from the project with their field values
     query_items = """
@@ -279,8 +328,6 @@ def get_project_issues_by_sprint_and_status(token: str, org: str, project_number
         response.raise_for_status()
         items_result = response.json()
         
-        print(f"DEBUG: Items query response status: {response.status_code}")
-        
     except requests.exceptions.RequestException as e:
         raise Exception(f"Network error when fetching items: {str(e)}")
     except Exception as e:
@@ -300,34 +347,31 @@ def get_project_issues_by_sprint_and_status(token: str, org: str, project_number
         iteration_match = False
         status_match = False
         
-        print(f"DEBUG: Checking {len(field_values)} field values")
-        
         for field_value in field_values:
             # Debug: Print all field values to understand structure
             if 'field' in field_value:
                 field_name = field_value['field'].get('name', 'Unknown')
-                print(f"DEBUG: Field '{field_name}': {field_value}")
+
             
             # Check iteration - look for "Iteration {num}" format
             if 'title' in field_value:
                 iteration_title = normalize_text(field_value.get('title', ''))
                 expected_iter_normalized = normalize_text(expected_iteration)
-                print(f"DEBUG: Comparing iteration '{iteration_title}' with expected '{expected_iter_normalized}'")
+  
                 if iteration_title == expected_iter_normalized:
                     iteration_match = True
-                    print(f"DEBUG: Found matching iteration: {iteration_title}")
+
             
             # Check status - look for "Ready" status
             if 'field' in field_value and field_value['field'].get('name'):
                 field_name = field_value['field']['name'].lower()
                 if field_name == 'status':
                     status_val = field_value.get('name') or field_value.get('text')
-                    print(f"DEBUG: Found status field with value: '{status_val}'")
+
                     if status_val and status_val.lower() == status_filter.lower():
                         status_match = True
-                        print(f"DEBUG: Found matching status: {status_val}")
-        
-        print(f"DEBUG: Iteration match: {iteration_match}, Status match: {status_match}")
+
+
         return iteration_match and status_match
 
     for item in items:
@@ -349,7 +393,7 @@ def get_project_issues_by_sprint_and_status(token: str, org: str, project_number
                 'issue_state': content.get('state', 'UNKNOWN')
             })
     
-    print(f"DEBUG: Found {len(filtered_issues)} issues matching criteria")
+
     return filtered_issues
 
 # Routes
@@ -419,14 +463,15 @@ def get_issues(sprint_name: Optional[str] = None):
             
             results.append(issue)
         
-        print(f"Found {len(results)} issues in sprint '{sprint_name}' with 'Ready' status")
+        # Remove this print statement - now only logged
+        logger.info(f"Successfully returned {len(results)} issues for sprint '{sprint_name}'")
         return results
         
     except Exception as e:
-        print(f"Full error details: {str(e)}")
-        print(f"Error type: {type(e).__name__}")
+        logger.error(f"Full error details: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
         import traceback
-        print(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Issue fetch error: {str(e)}")
 
 @app.get("/api/sprints", response_model=List[Sprint])
@@ -518,9 +563,9 @@ def get_sprints() -> List[Sprint]:
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Network error: {str(e)}")
     except Exception as e:
-        print(f"Error in get_sprints: {str(e)}")
+        logger.error(f"Error in get_sprints: {str(e)}")
         import traceback
-        print(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Sprint fetch error: {str(e)}")
 
 @app.post("/api/run-codex")
