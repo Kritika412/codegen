@@ -20,7 +20,6 @@ BRANCH = "main"
 PROMPT = sys.argv[1] if len(sys.argv) > 1 else "Write helpful backend code"
 REPO_NAME = sys.argv[2] if len(sys.argv) > 2 else "hail007/Agent-Testing"
 REPO_URL = f"https://github.com/{REPO_NAME}.git"
-
 # Make sure the OpenAI API key is available to the Codex CLI
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
