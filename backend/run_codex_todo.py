@@ -13,8 +13,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 # === Configuration ===
-REPO_URL = "https://github.com/hail007/Agent-Testing.git"
-REPO_NAME = "hail007/Agent-Testing"
+
 BRANCH = "main"
 
 # Get prompt from command line argument
