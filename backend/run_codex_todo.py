@@ -32,7 +32,7 @@ def run():
         subprocess.run(["git", "clone", "--branch", BRANCH, REPO_URL, temp_dir], check=True)
 
         print("🔑 Updating Git remote with token...")
-        token_remote_url = f"https://{GITHUB_TOKEN}@github.com/hail007/Agent-Testing.git"
+        token_remote_url = f"https://{GITHUB_TOKEN}@github.com/{REPO_NAME}.git"
         subprocess.run(["git", "remote", "set-url", "origin", token_remote_url], cwd=temp_dir, check=True)
 
         print(f"🤖 Running Codex CLI with prompt: {PROMPT}")
