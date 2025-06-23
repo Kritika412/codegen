@@ -27,7 +27,9 @@ def run():
     temp_dir = tempfile.mkdtemp()
     try:
         print("📥 Cloning repo...")
-        subprocess.run(["git", "clone", "--branch", BRANCH, REPO_URL, temp_dir], check=True)
+        token_clone_url = f"https://{GITHUB_TOKEN}@github.com/{REPO_NAME}.git"
+        subprocess.run(["git", "clone", "--branch", BRANCH, token_clone_url, temp_dir], check=True)
+
 
         print("🔑 Updating Git remote with token...")
         token_remote_url = f"https://{GITHUB_TOKEN}@github.com/{REPO_NAME}.git"
