@@ -3,6 +3,8 @@ import tempfile
 import os
 import shutil
 import sys
+import platform
+import shutil as sh
 from github import Github
 from dotenv import load_dotenv
 from datetime import datetime
@@ -13,35 +15,47 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 # === Configuration ===
-
 BRANCH = "main"
-
-# Get prompt from command line argument
 PROMPT = sys.argv[1] if len(sys.argv) > 1 else "Write helpful backend code"
 REPO_NAME = sys.argv[2] if len(sys.argv) > 2 else "hail007/Agent-Testing"
 REPO_URL = f"https://github.com/{REPO_NAME}.git"
-# Make sure the OpenAI API key is available to the Codex CLI
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+
+
+def find_codex_cli():
+    """Find the codex CLI path based on platform"""
+    is_windows = platform.system() == "Windows"
+    cmd_name = "codex.cmd" if is_windows else "codex"
+    codex_path = sh.which(cmd_name)
+    print("Codex CLI path:", codex_path)
+    if not codex_path:
+        raise FileNotFoundError(
+            f"❌ Codex CLI not found. Make sure it's installed globally with:\n\n    npm install -g codex\n"
+            f"And that it's on your PATH."
+        )
+    return codex_path
+
 
 def run():
     temp_dir = tempfile.mkdtemp()
     try:
         print("📥 Cloning repo...")
-        subprocess.run(["git", "clone", "--branch", BRANCH, REPO_URL, temp_dir], check=True)
+        token_clone_url = f"https://{GITHUB_TOKEN}@github.com/{REPO_NAME}.git"
+        subprocess.run(["git", "clone", "--branch", BRANCH, token_clone_url, temp_dir], check=True)
 
         print("🔑 Updating Git remote with token...")
         token_remote_url = f"https://{GITHUB_TOKEN}@github.com/{REPO_NAME}.git"
         subprocess.run(["git", "remote", "set-url", "origin", token_remote_url], cwd=temp_dir, check=True)
 
         print(f"🤖 Running Codex CLI with prompt: {PROMPT}")
-        subprocess.run(["codex", "--approval-mode", "full-auto", PROMPT], cwd=temp_dir, check=True)
+        codex_path = find_codex_cli()
+        subprocess.run([codex_path, "--approval-mode", "full-auto", PROMPT], cwd=temp_dir, check=True)
 
         print("✅ Preparing commit...")
         timestamp_branch = f"codex-todo-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         subprocess.run(["git", "checkout", "-b", timestamp_branch], cwd=temp_dir, check=True)
         subprocess.run(["git", "add", "."], cwd=temp_dir, check=True)
 
-        # Check if there are staged changes
         has_changes = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=temp_dir)
         if has_changes.returncode != 0:
             subprocess.run(["git", "commit", "-m", f"feat: codex changes for '{PROMPT}'"], cwd=temp_dir, check=True)
@@ -73,6 +87,7 @@ def run():
         print(f"❌ Error: {e}")
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     run()
