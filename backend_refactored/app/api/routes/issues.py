@@ -21,6 +21,95 @@ from app.core.exceptions import (
 router = APIRouter(prefix="/issues", tags=["issues"])
 
 
+@router.get("/ready", response_model=List[Issue])
+async def get_ready_issues(
+    sprint_name: Optional[str] = Query(None, description="Sprint name to filter by")
+):
+    """
+    Get issues that are in 'Ready' status for Codex processing.
+    
+    This endpoint specifically returns issues that are ready for AI assistance,
+    filtering to only show 'Ready' status issues.
+    
+    Args:
+        sprint_name: Optional sprint name to filter by
+        
+    Returns:
+        List of issues with 'Ready' status
+        
+    Raises:
+        HTTPException: If sprint is not found or other errors occur
+    """
+    try:
+        if not sprint_name:
+            # If no sprint specified, could get ready issues from current/latest sprint
+            # For now, require sprint_name
+            raise HTTPException(
+                status_code=400, 
+                detail="sprint_name parameter is required"
+            )
+        
+        github_service = GitHubService()
+        
+        # Get issues from the specific sprint filtered by 'Ready' status
+        filtered_issues = github_service.get_project_items_by_iteration(
+            sprint_name=sprint_name,
+            status_filter="Ready"  # Filter for Ready status specifically
+        )
+        
+        # Convert to Issue objects
+        issues = []
+        for issue_data in filtered_issues:
+            content = issue_data['content']
+            
+            # Extract assignee
+            assignee = None
+            if 'assignees' in content and content['assignees']['nodes']:
+                assignee = content['assignees']['nodes'][0]['login']
+            
+            # Extract labels
+            labels = []
+            if 'labels' in content and content['labels']['nodes']:
+                labels = [label['name'] for label in content['labels']['nodes']]
+            
+            # Extract repository name
+            repo_name = "Unknown"
+            if 'repository' in content:
+                repo_name = content['repository']['nameWithOwner']
+            elif 'title' in content and not content.get('url'):
+                repo_name = "Draft Issue"
+            
+            # Create Issue object
+            issue = Issue(
+                id=content['id'],
+                number=content.get('number', 0),
+                title=content['title'],
+                assignee=assignee,
+                status=issue_data['status'].lower() if issue_data['status'] else 'unknown',
+                created_at=content.get('createdAt', ''),
+                updated_at=content.get('updatedAt', ''),
+                body=content.get('body', ''),
+                labels=labels,
+                repo=repo_name,
+                url=content.get('url', '')
+            )
+            
+            issues.append(issue)
+        
+        logger.info(f"Successfully returned {len(issues)} ready issues for sprint '{sprint_name}'")
+        return issues
+        
+    except SprintNotFoundError as e:
+        logger.error(f"Sprint not found: {str(e)}")
+        raise HTTPException(status_code=404, detail=str(e))
+    except GitHubAPIError as e:
+        logger.error(f"GitHub API error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"GitHub API error: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error in get_ready_issues: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
 @router.get("/", response_model=List[Issue])
 async def get_issues(
     sprint_name: Optional[str] = Query(None, description="Sprint name to filter by"),
@@ -190,92 +279,3 @@ async def get_issue(
     except Exception as e:
         logger.error(f"Error getting issue #{issue_number}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving issue: {str(e)}")
-
-
-@router.get("/ready", response_model=List[Issue])
-async def get_ready_issues(
-    sprint_name: Optional[str] = Query(None, description="Sprint name to filter by")
-):
-    """
-    Get issues that are in 'Ready' status for Codex processing.
-    
-    This endpoint specifically returns issues that are ready for AI assistance,
-    filtering to only show 'Ready' status issues.
-    
-    Args:
-        sprint_name: Optional sprint name to filter by
-        
-    Returns:
-        List of issues with 'Ready' status
-        
-    Raises:
-        HTTPException: If sprint is not found or other errors occur
-    """
-    try:
-        if not sprint_name:
-            # If no sprint specified, could get ready issues from current/latest sprint
-            # For now, require sprint_name
-            raise HTTPException(
-                status_code=400, 
-                detail="sprint_name parameter is required"
-            )
-        
-        github_service = GitHubService()
-        
-        # Get issues from the specific sprint filtered by 'Ready' status
-        filtered_issues = github_service.get_project_items_by_iteration(
-            sprint_name=sprint_name,
-            status_filter="Ready"  # Filter for Ready status specifically
-        )
-        
-        # Convert to Issue objects
-        issues = []
-        for issue_data in filtered_issues:
-            content = issue_data['content']
-            
-            # Extract assignee
-            assignee = None
-            if 'assignees' in content and content['assignees']['nodes']:
-                assignee = content['assignees']['nodes'][0]['login']
-            
-            # Extract labels
-            labels = []
-            if 'labels' in content and content['labels']['nodes']:
-                labels = [label['name'] for label in content['labels']['nodes']]
-            
-            # Extract repository name
-            repo_name = "Unknown"
-            if 'repository' in content:
-                repo_name = content['repository']['nameWithOwner']
-            elif 'title' in content and not content.get('url'):
-                repo_name = "Draft Issue"
-            
-            # Create Issue object
-            issue = Issue(
-                id=content['id'],
-                number=content.get('number', 0),
-                title=content['title'],
-                assignee=assignee,
-                status=issue_data['status'].lower() if issue_data['status'] else 'unknown',
-                created_at=content.get('createdAt', ''),
-                updated_at=content.get('updatedAt', ''),
-                body=content.get('body', ''),
-                labels=labels,
-                repo=repo_name,
-                url=content.get('url', '')
-            )
-            
-            issues.append(issue)
-        
-        logger.info(f"Successfully returned {len(issues)} ready issues for sprint '{sprint_name}'")
-        return issues
-        
-    except SprintNotFoundError as e:
-        logger.error(f"Sprint not found: {str(e)}")
-        raise HTTPException(status_code=404, detail=str(e))
-    except GitHubAPIError as e:
-        logger.error(f"GitHub API error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"GitHub API error: {str(e)}")
-    except Exception as e:
-        logger.error(f"Unexpected error in get_ready_issues: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

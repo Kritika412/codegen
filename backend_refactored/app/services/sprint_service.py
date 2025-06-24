@@ -6,7 +6,7 @@ metrics, and generating sprint summaries.
 """
 
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.services.github_service import GitHubService
 from app.models.schemas import Sprint, SprintSummary
@@ -154,13 +154,40 @@ class SprintService:
             duration = iteration_info.get('duration', 0)
             end_date = calculate_end_date(start_date, duration) if start_date and duration else ''
             
+            # Format the sprint name with dates
+            if start_date and end_date:
+                from datetime import datetime
+                try:
+                    start_dt = datetime.fromisoformat(start_date)
+                    end_dt = datetime.fromisoformat(end_date.replace('T00:00:00', '')) - timedelta(days=1)
+                    date_range = f"{start_dt.strftime('%b %d')} - {end_dt.strftime('%b %d')}"
+                    
+                    # Check if this is the current sprint
+                    current_date = datetime.now().date()
+                    is_current = start_dt.date() <= current_date <= end_dt.date()
+                    
+                    if is_current:
+                        display_name = f"{view_name}: {date_range} (current)"
+                    else:
+                        display_name = f"{view_name}: {date_range}"
+                        
+                except Exception as e:
+                    logger.warning(f"Error formatting dates for sprint {view_name}: {e}")
+                    display_name = view_name
+                    is_current = False
+            else:
+                display_name = view_name
+                is_current = False
+            
             return Sprint(
                 id=f"sprint{sprint_number}",
-                name=view_name,
+                name=display_name,  # Display name with dates
+                original_name=view_name,  # Original name for API calls
                 start_date=start_date,
                 end_date=end_date,
                 iteration_id=iteration_info.get('id', ''),
-                duration=duration
+                duration=duration,
+                is_current=is_current
             )
             
         except Exception as e:

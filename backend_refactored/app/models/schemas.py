@@ -56,11 +56,13 @@ class Sprint(BaseModel):
     """Sprint model representing a project iteration."""
     
     id: str = Field(..., description="Sprint identifier")
-    name: str = Field(..., description="Sprint name/title")
+    name: str = Field(..., description="Sprint display name with dates")
+    original_name: str = Field(..., description="Original sprint name for API calls")
     start_date: str = Field(..., description="Sprint start date (ISO format)")
     end_date: str = Field(..., description="Sprint end date (ISO format)")
     iteration_id: Optional[str] = Field(None, description="GitHub iteration ID")
     duration: Optional[int] = Field(None, description="Sprint duration in days")
+    is_current: bool = Field(False, description="Whether this is the current sprint")
 
 
 class SprintSummary(BaseModel):

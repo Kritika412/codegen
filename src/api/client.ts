@@ -18,8 +18,10 @@ export interface ApiIssue {
 export interface ApiSprint {
   id: string;
   name: string;
+  original_name: string;
   start_date: string;
   end_date: string;
+  is_current: boolean;
 }
 
 class ApiClient {
@@ -41,6 +43,11 @@ class ApiClient {
       ? `${API_BASE_URL}/issues?sprint_name=${encodeURIComponent(sprintName)}`
       : `${API_BASE_URL}/issues`;
     
+    return this.fetchWithErrorHandling(url);
+  }
+
+  async getReadyIssues(sprintName: string): Promise<ApiIssue[]> {
+    const url = `${API_BASE_URL}/issues/ready?sprint_name=${encodeURIComponent(sprintName)}`;
     return this.fetchWithErrorHandling(url);
   }
 
