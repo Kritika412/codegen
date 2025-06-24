@@ -271,20 +271,33 @@ class SprintService:
             logger.error(f"Error getting issues by status: {str(e)}")
             raise
     
-    def validate_sprint_exists(self, sprint_name: str) -> bool:
+    def normalize_sprint_name(self, requested_name: str) -> str:
         """
-        Validate that a sprint view exists.
+        Normalize sprint name to handle frontend sending display names with dates.
         
         Args:
-            sprint_name: Name of the sprint to validate
+            requested_name: Sprint name from frontend (might include dates)
             
         Returns:
-            True if sprint exists, False otherwise
+            Normalized sprint name that matches GitHub views
         """
         try:
-            views = self.github_service.get_project_views()
-            return any(view['name'] == sprint_name for view in views)
+            # If the name contains a colon (indicating it has date formatting),
+            # extract just the base sprint name
+            if ':' in requested_name:
+                base_name = requested_name.split(':')[0].strip()
+                logger.info(f"Normalized sprint name from '{requested_name}' to '{base_name}'")
+                return base_name
+            
+            # Remove any " (current)" suffix
+            if ' (current)' in requested_name:
+                base_name = requested_name.replace(' (current)', '').strip()
+                logger.info(f"Normalized sprint name from '{requested_name}' to '{base_name}'")
+                return base_name
+            
+            # Return as-is if no special formatting detected
+            return requested_name
             
         except Exception as e:
-            logger.error(f"Error validating sprint existence: {str(e)}")
-            return False
+            logger.warning(f"Error normalizing sprint name '{requested_name}': {e}")
+            return requested_name

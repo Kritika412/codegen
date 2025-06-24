@@ -73,9 +73,13 @@ async def get_sprint_summary(
     """
     try:
         sprint_service = SprintService()
-        summary = sprint_service.get_sprint_summary(sprint_name)
         
-        logger.info(f"Successfully generated summary for sprint '{sprint_name}'")
+        # Normalize the sprint name to handle frontend display names
+        normalized_sprint_name = sprint_service.normalize_sprint_name(sprint_name)
+        
+        summary = sprint_service.get_sprint_summary(normalized_sprint_name)
+        
+        logger.info(f"Successfully generated summary for sprint '{normalized_sprint_name}'")
         return summary
         
     except SprintNotFoundError as e:

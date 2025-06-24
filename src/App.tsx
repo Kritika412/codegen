@@ -302,7 +302,7 @@ function App() {
     const prompt = issueDescription || "Add backend logic";
     const repo = issue?.repo;
 
-    const response = await fetch("http://localhost:8000/api/run-codex", {
+    const response = await fetch("http://localhost:8000/api/codex/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt, repo }),

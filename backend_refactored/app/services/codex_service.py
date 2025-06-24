@@ -70,6 +70,7 @@ class CodexService:
             # Create temporary directory
             temp_dir = tempfile.mkdtemp()
             logger.info(f"Created temporary directory: {temp_dir}")
+            print(f"[CODEX] Working in directory: {temp_dir}")
             
             # Clone repository
             self._clone_repository(repo_url, branch, temp_dir)
@@ -78,7 +79,9 @@ class CodexService:
             self._setup_git_auth(repo_name, temp_dir)
             
             # Run Codex CLI
+            print(f"[CODEX] Starting Codex CLI with prompt: '{prompt}'")
             self._run_codex_cli(prompt, temp_dir)
+            print(f"[CODEX] Codex CLI completed")
             
             # Create and commit changes
             timestamp_branch = f"codex-{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -156,19 +159,25 @@ class CodexService:
         """Run Codex CLI with the given prompt."""
         try:
             logger.info(f"Running Codex CLI with prompt: {prompt}")
-            subprocess.run(
+            print(f"[CODEX] Executing: codex --approval-mode full-auto '{prompt}'")
+            # Run without capture_output to show real-time output
+            result = subprocess.run(
                 ["codex", "--approval-mode", "full-auto", prompt],
                 cwd=temp_dir,
                 check=True,
-                capture_output=True,
                 text=True
             )
+            print(f"[CODEX] Command completed successfully")
             logger.info("Codex CLI executed successfully")
         except subprocess.CalledProcessError as e:
-            logger.error(f"Codex CLI failed: {e.stderr}")
-            raise CodexExecutionError(f"Codex CLI execution failed: {e.stderr}")
+            error_msg = f"Codex CLI failed with return code: {e.returncode}"
+            print(f"[CODEX ERROR] {error_msg}")
+            logger.error(error_msg)
+            raise CodexExecutionError(error_msg)
         except FileNotFoundError:
-            raise CodexExecutionError("Codex CLI not found. Please ensure it's installed and in PATH.")
+            error_msg = "Codex CLI not found. Please ensure it's installed and in PATH."
+            print(f"[CODEX ERROR] {error_msg}")
+            raise CodexExecutionError(error_msg)
     
     def _commit_changes(self, prompt: str, branch_name: str, temp_dir: str) -> bool:
         """Create a new branch and commit changes."""

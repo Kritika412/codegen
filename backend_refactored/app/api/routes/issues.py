@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from app.models.schemas import Issue, IssueUpdateRequest, ApiResponse
 from app.services.github_service import GitHubService
+from app.services.sprint_service import SprintService
 from app.core.config import logger
 from app.core.exceptions import (
     GitHubAPIError,
@@ -50,10 +51,14 @@ async def get_ready_issues(
             )
         
         github_service = GitHubService()
+        sprint_service = SprintService()
+        
+        # Normalize the sprint name to handle frontend display names
+        normalized_sprint_name = sprint_service.normalize_sprint_name(sprint_name)
         
         # Get issues from the specific sprint filtered by 'Ready' status
         filtered_issues = github_service.get_project_items_by_iteration(
-            sprint_name=sprint_name,
+            sprint_name=normalized_sprint_name,
             status_filter="Ready"  # Filter for Ready status specifically
         )
         
@@ -96,7 +101,7 @@ async def get_ready_issues(
             
             issues.append(issue)
         
-        logger.info(f"Successfully returned {len(issues)} ready issues for sprint '{sprint_name}'")
+        logger.info(f"Successfully returned {len(issues)} ready issues for sprint '{normalized_sprint_name}'")
         return issues
         
     except SprintNotFoundError as e:
@@ -136,10 +141,14 @@ async def get_issues(
             )
         
         github_service = GitHubService()
+        sprint_service = SprintService()
+        
+        # Normalize the sprint name to handle frontend display names
+        normalized_sprint_name = sprint_service.normalize_sprint_name(sprint_name)
         
         # Get issues from the specific sprint with optional status filter
         filtered_issues = github_service.get_project_items_by_iteration(
-            sprint_name=sprint_name,
+            sprint_name=normalized_sprint_name,
             status_filter=status
         )
         
@@ -182,7 +191,7 @@ async def get_issues(
             
             issues.append(issue)
         
-        logger.info(f"Successfully returned {len(issues)} issues for sprint '{sprint_name}'")
+        logger.info(f"Successfully returned {len(issues)} issues for sprint '{normalized_sprint_name}'")
         return issues
         
     except SprintNotFoundError as e:
