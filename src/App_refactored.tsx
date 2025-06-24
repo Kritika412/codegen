@@ -110,6 +110,7 @@ function App() {
   // API state
   const [sprints, setSprints] = useState<ApiSprint[]>([]);
   const [issues, setIssues] = useState<ApiIssue[]>([]);
+  const [readyIssues, setReadyIssues] = useState<ApiIssue[]>([]); // NEW: Only Ready issues for Codex
   const [sprintSummary, setSprintSummary] = useState<SprintSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,10 +143,22 @@ function App() {
     }
   };
 
+  // NEW: Fetch only Ready issues for Codex functionality
+  const fetchReadyIssues = async (sprintName: string) => {
+    try {
+      const readyIssueData = await apiClient.getReadyIssues(sprintName);
+      setReadyIssues(readyIssueData);
+      console.log(`Fetched ${readyIssueData.length} ready issues for Codex`);
+    } catch (error) {
+      console.warn('Failed to fetch ready issues:', error);
+      setReadyIssues([]);
+    }
+  };
+
   // Fetch sprint summary
   const fetchSprintSummary = async (sprintName: string) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/sprint-summary?sprint_name=${encodeURIComponent(sprintName)}`);
+      const response = await fetch(`http://localhost:8000/api/sprints/summary?sprint_name=${encodeURIComponent(sprintName)}`);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -189,8 +202,10 @@ function App() {
     if (!useMockData && selectedSprint && sprints.length > 0) {
       const currentSprint = sprints.find(s => s.id === selectedSprint);
       if (currentSprint) {
-        fetchIssues(currentSprint.name);
-        fetchSprintSummary(currentSprint.name);
+        // Use original_name for API calls (without dates)
+        fetchIssues(currentSprint.original_name);
+        fetchReadyIssues(currentSprint.original_name); // NEW: Also fetch Ready issues
+        fetchSprintSummary(currentSprint.original_name);
       }
     }
   }, [selectedSprint, sprints, useMockData]);
@@ -198,7 +213,10 @@ function App() {
   // Make sure we have a selected sprint when sprints are loaded
   useEffect(() => {
     if (sprints.length > 0 && !selectedSprint) {
-      setSelectedSprint(sprints[0].id);
+      // Find the current sprint first, otherwise use the first one
+      const currentSprint = sprints.find(s => s.is_current);
+      const defaultSprint = currentSprint || sprints[0];
+      setSelectedSprint(defaultSprint.id);
     }
   }, [sprints, selectedSprint]);
   
@@ -206,7 +224,19 @@ function App() {
   const formatDate = (dateString: string): string => {
     if (!dateString) return '';
     try {
-      const date = new Date(dateString);
+      // Handle date strings properly by treating them as local dates
+      let date;
+      if (dateString.includes('T')) {
+        // If it has time component, remove it and treat as local date
+        const dateOnly = dateString.split('T')[0];
+        const [year, month, day] = dateOnly.split('-').map(Number);
+        date = new Date(year, month - 1, day); // month is 0-indexed
+      } else {
+        // If it's just a date, parse it as local date
+        const [year, month, day] = dateString.split('-').map(Number);
+        date = new Date(year, month - 1, day); // month is 0-indexed
+      }
+      
       return date.toLocaleDateString('en-US', { 
         month: 'short', 
         day: 'numeric'
@@ -241,6 +271,22 @@ function App() {
         }))
       : [];
 
+  // NEW: Ready issues for Codex section (only Ready status)
+  const displayReadyIssues = useMockData
+    ? []
+    : readyIssues.length > 0
+      ? readyIssues.map(issue => ({
+          id: `${issue.repo}#${issue.number}`, // composite id
+          title: issue.title,
+          assignee: issue.assignee || 'Unassigned',
+          status: issue.status,
+          body: issue.body || '',
+          repo: issue.repo,
+          number: issue.number,
+          url: issue.url,
+        }))
+      : [];
+
   const currentSprint = displaySprints.find(sprint => sprint.id === selectedSprint) || displaySprints[0];
 
   const handleSprintChange = (sprintId: string) => {
@@ -252,11 +298,11 @@ function App() {
   };
 
   const handleCode = async () => {
-    const issue = displayIssues.find(issue => issue.id === selectedIssue);
+    const issue = displayReadyIssues.find(issue => issue.id === selectedIssue); // CHANGED: Use Ready issues
     const prompt = issueDescription || "Add backend logic";
     const repo = issue?.repo;
 
-    const response = await fetch("http://localhost:8000/api/run-codex", {
+    const response = await fetch("http://localhost:8000/api/codex/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt, repo }),
@@ -268,10 +314,10 @@ function App() {
     }
   };
   
-  // FIXED: Handle issue selection changes properly
+  // FIXED: Handle issue selection changes properly (now uses Ready issues)
   const handleIssueSelectionChange = (issueId: string) => {
     setSelectedIssue(issueId);
-    const issue = displayIssues.find(issue => issue.id === issueId);
+    const issue = displayReadyIssues.find(issue => issue.id === issueId); // CHANGED: Use Ready issues
     if (issue) {
       const description = issue.body || '';
       setIssueDescription(description);
@@ -291,7 +337,7 @@ function App() {
       return;
     }
 
-    const issue = displayIssues.find(issue => issue.id === selectedIssue);
+    const issue = displayReadyIssues.find(issue => issue.id === selectedIssue); // CHANGED: Use Ready issues
     if (!issue) {
       alert('Selected issue not found.');
       return;
@@ -348,13 +394,13 @@ function App() {
     }
   };
 
-  // FIXED: Better useEffect for issue description handling
+  // FIXED: Better useEffect for issue description handling (now uses Ready issues)
   useEffect(() => {
-    if (displayIssues.length > 0) {
+    if (displayReadyIssues.length > 0) {
       // Only update if we don't have a selected issue or if the current selection is not in the new list
-      const found = displayIssues.find(issue => issue.id.toString() === selectedIssue);
+      const found = displayReadyIssues.find(issue => issue.id.toString() === selectedIssue);
       if (!selectedIssue || !found) {
-        const firstIssue = displayIssues[0];
+        const firstIssue = displayReadyIssues[0];
         setSelectedIssue(firstIssue.id.toString());
         const description = firstIssue.body || '';
         setIssueDescription(description);
@@ -373,7 +419,7 @@ function App() {
       setIssueDescription('');
       setOriginalIssueDescription('');
     }
-  }, [displayIssues]); // Removed selectedIssue from dependencies
+  }, [displayReadyIssues]); // CHANGED: Use displayReadyIssues instead of displayIssues
 
   return (
     <div className="bg-gray-100 text-gray-900 min-h-screen">
@@ -451,12 +497,17 @@ function App() {
                 value={selectedIssue}
                 onChange={(e) => handleIssueSelectionChange(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                disabled={displayReadyIssues.length === 0}
               >
-                {displayIssues.map((issue) => (
-                  <option key={issue.id} value={issue.id}>
-                    [{issue.repo}] [#{issue.number}] {issue.title}
-                  </option>
-                ))}
+                {displayReadyIssues.length === 0 ? (
+                  <option value="">No Ready issues available for Codex assistance</option>
+                ) : (
+                  displayReadyIssues.map((issue) => (
+                    <option key={issue.id} value={issue.id}>
+                      [{issue.repo}] [#{issue.number}] {issue.title} (Ready)
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 
