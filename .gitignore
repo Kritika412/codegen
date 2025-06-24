@@ -23,3 +23,10 @@ dist-ssr
 *.sln
 *.sw?
 *.pyc
+
+#Ignore env files and private keys
+.env
+.env*
+
+#Ignore venv
+venv/
