@@ -159,7 +159,7 @@ class SprintService:
                 from datetime import datetime
                 try:
                     start_dt = datetime.fromisoformat(start_date)
-                    end_dt = datetime.fromisoformat(end_date.replace('T00:00:00', '')) - timedelta(days=1)
+                    end_dt = datetime.fromisoformat(end_date.replace('T00:00:00', ''))
                     date_range = f"{start_dt.strftime('%b %d')} - {end_dt.strftime('%b %d')}"
                     
                     # Check if this is the current sprint

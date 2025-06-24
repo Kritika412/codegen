@@ -224,7 +224,19 @@ function App() {
   const formatDate = (dateString: string): string => {
     if (!dateString) return '';
     try {
-      const date = new Date(dateString);
+      // Handle date strings properly by treating them as local dates
+      let date;
+      if (dateString.includes('T')) {
+        // If it has time component, remove it and treat as local date
+        const dateOnly = dateString.split('T')[0];
+        const [year, month, day] = dateOnly.split('-').map(Number);
+        date = new Date(year, month - 1, day); // month is 0-indexed
+      } else {
+        // If it's just a date, parse it as local date
+        const [year, month, day] = dateString.split('-').map(Number);
+        date = new Date(year, month - 1, day); // month is 0-indexed
+      }
+      
       return date.toLocaleDateString('en-US', { 
         month: 'short', 
         day: 'numeric'

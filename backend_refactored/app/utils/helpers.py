@@ -55,13 +55,15 @@ def extract_sprint_number(sprint_name: str) -> Optional[str]:
 
 def calculate_days_remaining(end_date_str: str) -> int:
     """
-    Calculate days remaining from current date to end date.
+    Calculate days remaining from current date to end date (inclusive).
+    
+    For inclusive sprint dates, if today is the end date, there's still 1 day remaining.
     
     Args:
         end_date_str: End date in ISO format
         
     Returns:
-        Number of days remaining (0 if past due)
+        Number of days remaining (0 if past due, inclusive of end date)
     """
     try:
         if not end_date_str:
@@ -71,7 +73,8 @@ def calculate_days_remaining(end_date_str: str) -> int:
         end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
         current_date = datetime.now(end_date.tzinfo)
         
-        days_remaining = (end_date - current_date).days
+        # Add 1 day to make the calculation inclusive of the end date
+        days_remaining = (end_date - current_date).days + 1
         return max(0, days_remaining)  # Don't return negative days
         
     except Exception as e:
@@ -82,20 +85,23 @@ def calculate_days_remaining(end_date_str: str) -> int:
 def calculate_end_date(start_date_str: str, duration_days: int) -> str:
     """
     Calculate end date from start date and duration.
+    Note: End date is calculated as start_date + (duration_days - 1) 
+    to make sprints inclusive of both start and end dates.
     
     Args:
         start_date_str: Start date in ISO format
-        duration_days: Duration in days
+        duration_days: Duration in days from GitHub iteration
         
     Returns:
-        End date in ISO format
+        End date in ISO format (start_date + duration_days - 1)
     """
     try:
         if not start_date_str or not duration_days:
             return ""
             
         start_dt = datetime.fromisoformat(start_date_str.replace('Z', '+00:00'))
-        end_dt = start_dt + timedelta(days=duration_days)
+        # Subtract 1 day to make the sprint inclusive (Jun 23 - Jun 27 instead of Jun 23 - Jun 28)
+        end_dt = start_dt + timedelta(days=duration_days - 1)
         return end_dt.isoformat()
         
     except Exception as e:
