@@ -40,19 +40,21 @@ class CodexService:
         # Set environment variable for Codex CLI
         os.environ["OPENAI_API_KEY"] = self.openai_api_key
     
-    def run_codex_workflow(self, prompt: str, repo_name: str, 
-                          branch: str = "main", auto_push: bool = False) -> Dict[str, str]:
+    def run_codex_and_commit(self, prompt: str, repo_name: str, 
+                            branch: str = "main") -> Dict[str, str]:
         """
-        Execute the complete Codex workflow: clone, generate, commit, and optionally push.
+        Execute Codex workflow up to commit stage: clone, generate, commit.
+        
+        This matches the original run_codex_todo.py flow where we stop after
+        committing and ask the user if they want to push.
         
         Args:
             prompt: The prompt for code generation
             repo_name: Repository name in format "owner/repo"
             branch: Source branch to work from
-            auto_push: Whether to automatically push and create PR
             
         Returns:
-            Dictionary with operation results
+            Dictionary with operation results including branch name for next step
             
         Raises:
             CodexExecutionError: If any step in the workflow fails
@@ -93,36 +95,33 @@ class CodexService:
                     "status": "no_changes",
                     "message": "No changes were made by Codex",
                     "branch_name": None,
-                    "pr_url": None
+                    "temp_dir": None,
+                    "repo_name": repo_name,
+                    "base_branch": branch
                 }
             
+            # Store temp directory path for the push step
+            # In production, this would need to be handled differently (Redis, DB, etc.)
             result = {
                 "status": "committed",
-                "message": f"Codex changes committed to branch '{timestamp_branch}'",
+                "message": f"Codex changes committed to branch '{timestamp_branch}'. Ready to push.",
                 "branch_name": timestamp_branch,
-                "pr_url": None
+                "temp_dir": temp_dir,  # Keep temp dir for push step
+                "repo_name": repo_name,
+                "base_branch": branch
             }
             
-            # Push and create PR if requested
-            if auto_push:
-                pr_url = self._push_and_create_pr(prompt, repo_name, timestamp_branch, branch, temp_dir)
-                result.update({
-                    "status": "pushed",
-                    "message": f"Codex changes pushed and PR created",
-                    "pr_url": pr_url
-                })
-            
-            logger.info(f"Codex workflow completed successfully: {result}")
+            logger.info(f"Codex commit phase completed successfully: {result}")
             return result
             
         except Exception as e:
-            logger.error(f"Codex workflow failed: {str(e)}")
-            raise CodexExecutionError(f"Codex workflow failed: {str(e)}")
-        finally:
-            # Clean up temporary directory
+            # Clean up temp directory on error
             if temp_dir and os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir, ignore_errors=True)
-                logger.info(f"Cleaned up temporary directory: {temp_dir}")
+                logger.info(f"Cleaned up temporary directory due to error: {temp_dir}")
+            
+            logger.error(f"Codex workflow failed: {str(e)}")
+            raise CodexExecutionError(f"Codex workflow failed: {str(e)}")
     
     def _clone_repository(self, repo_url: str, branch: str, temp_dir: str) -> None:
         """Clone the repository to temporary directory."""
@@ -228,6 +227,69 @@ class CodexService:
         except subprocess.CalledProcessError as e:
             logger.error(f"Git commit failed: {e.stderr}")
             raise CodexExecutionError(f"Failed to commit changes: {e.stderr}")
+    
+    def push_branch_and_create_pr(self, prompt: str, repo_name: str, branch_name: str, 
+                                 base_branch: str, temp_dir: str) -> Dict[str, str]:
+        """
+        Push the committed branch and create a pull request.
+        
+        This is the second step that happens after user confirms they want to create a PR.
+        
+        Args:
+            prompt: Original prompt (for PR title/description)
+            repo_name: Repository name in format "owner/repo"
+            branch_name: Name of the branch to push
+            base_branch: Base branch for the PR
+            temp_dir: Temporary directory with the committed changes
+            
+        Returns:
+            Dictionary with push results and PR URL
+            
+        Raises:
+            CodexExecutionError: If push or PR creation fails
+        """
+        try:
+            logger.info(f"Starting push and PR creation for branch: {branch_name}")
+            
+            # Verify temp directory exists
+            if not os.path.exists(temp_dir):
+                raise CodexExecutionError(f"Temporary directory not found: {temp_dir}")
+            
+            # Push the branch and create PR
+            pr_url = self._push_and_create_pr(prompt, repo_name, branch_name, base_branch, temp_dir)
+            
+            result = {
+                "status": "pushed",
+                "message": f"Branch '{branch_name}' pushed and PR created successfully",
+                "branch_name": branch_name,
+                "pr_url": pr_url
+            }
+            
+            logger.info(f"Push and PR creation completed: {result}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Push and PR creation failed: {str(e)}")
+            raise CodexExecutionError(f"Failed to push and create PR: {str(e)}")
+        finally:
+            # Clean up temporary directory after pushing
+            if temp_dir and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                logger.info(f"Cleaned up temporary directory: {temp_dir}")
+    
+    def cleanup_temp_directory(self, temp_dir: str) -> None:
+        """
+        Clean up temporary directory (used when user chooses not to create PR).
+        
+        Args:
+            temp_dir: Path to temporary directory to clean up
+        """
+        try:
+            if temp_dir and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                logger.info(f"Cleaned up temporary directory: {temp_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to clean up temporary directory {temp_dir}: {e}")
     
     def _push_and_create_pr(self, prompt: str, repo_name: str, branch_name: str, 
                            base_branch: str, temp_dir: str) -> str:

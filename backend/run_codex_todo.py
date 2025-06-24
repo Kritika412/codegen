@@ -58,7 +58,7 @@ def run():
 
         has_changes = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=temp_dir)
         if has_changes.returncode != 0:
-            subprocess.run(["git", "commit", "-m", f"feat: codex changes for '{PROMPT}'"], cwd=temp_dir, check=True)
+            subprocess.run(["git", "commit", "-m", f"feat: codex changes for '{PROMPT[:100]}'"], cwd=temp_dir, check=True)
         else:
             print("⚠️ No changes to commit.")
             return

@@ -108,6 +108,36 @@ class CodexResponse(BaseModel):
     pr_url: Optional[str] = Field(None, description="Pull request URL")
 
 
+class CodexCommitResponse(BaseModel):
+    """Response model for Codex commit phase (first step)."""
+    
+    status: str = Field(..., description="Status of the operation")
+    message: str = Field(..., description="Operation result message")
+    branch_name: Optional[str] = Field(None, description="Created branch name")
+    temp_dir: Optional[str] = Field(None, description="Temporary directory path")
+    repo_name: str = Field(..., description="Repository name")
+    base_branch: str = Field(..., description="Base branch")
+
+
+class CodexPushRequest(BaseModel):
+    """Request model for Codex push phase (second step)."""
+    
+    prompt: str = Field(..., description="Original codex prompt")
+    repo_name: str = Field(..., description="Repository name")
+    branch_name: str = Field(..., description="Branch name to push")
+    base_branch: str = Field(..., description="Base branch for PR")
+    temp_dir: str = Field(..., description="Temporary directory path")
+
+
+class CodexPushResponse(BaseModel):
+    """Response model for Codex push phase (second step)."""
+    
+    status: str = Field(..., description="Status of the operation")
+    message: str = Field(..., description="Operation result message")
+    branch_name: str = Field(..., description="Pushed branch name")
+    pr_url: str = Field(..., description="Pull request URL")
+
+
 class ApiResponse(BaseModel):
     """Generic API response model."""
     

@@ -8,7 +8,10 @@ code generation tasks, and checking Codex service status.
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 
-from app.models.schemas import CodexRequest, CodexResponse
+from app.models.schemas import (
+    CodexRequest, CodexResponse, CodexCommitResponse, 
+    CodexPushRequest, CodexPushResponse
+)
 from app.services.codex_service import CodexService
 from app.core.config import logger
 from app.core.exceptions import CodexExecutionError
@@ -16,22 +19,24 @@ from app.core.exceptions import CodexExecutionError
 router = APIRouter(prefix="/codex", tags=["codex"])
 
 
-@router.post("/run", response_model=CodexResponse)
+@router.post("/run", response_model=CodexCommitResponse)
 async def run_codex(codex_request: CodexRequest):
     """
-    Run Codex CLI with the provided prompt and repository.
+    Run Codex CLI and commit changes (first step).
     
-    This endpoint executes the complete Codex workflow:
+    This endpoint executes the first part of the Codex workflow:
     1. Clone the repository
     2. Run Codex CLI with the prompt
     3. Commit changes to a new branch
-    4. Return the results
+    4. Return results for user confirmation
+    
+    The user can then decide whether to push and create a PR using /push endpoint.
     
     Args:
         codex_request: Request containing prompt and repository information
         
     Returns:
-        CodexResponse with operation results
+        CodexCommitResponse with operation results
         
     Raises:
         HTTPException: If Codex execution fails
@@ -39,20 +44,22 @@ async def run_codex(codex_request: CodexRequest):
     try:
         codex_service = CodexService()
         
-        # Run the Codex workflow (without auto-push for safety)
-        result = codex_service.run_codex_workflow(
+        # Run the Codex workflow up to commit stage
+        result = codex_service.run_codex_and_commit(
             prompt=codex_request.prompt,
-            repo_name=codex_request.repo,
-            auto_push=False  # Don't auto-push for manual approval
+            repo_name=codex_request.repo
         )
         
-        response = CodexResponse(
+        response = CodexCommitResponse(
+            status=result["status"],
             message=result["message"],
             branch_name=result["branch_name"],
-            pr_url=result["pr_url"]
+            temp_dir=result["temp_dir"],
+            repo_name=result["repo_name"],
+            base_branch=result["base_branch"]
         )
         
-        logger.info(f"Codex workflow completed for repo: {codex_request.repo}")
+        logger.info(f"Codex commit phase completed for repo: {codex_request.repo}")
         return response
         
     except CodexExecutionError as e:
@@ -63,93 +70,79 @@ async def run_codex(codex_request: CodexRequest):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-@router.post("/run-async")
-async def run_codex_async(codex_request: CodexRequest, background_tasks: BackgroundTasks):
+@router.post("/push", response_model=CodexPushResponse)
+async def push_codex(push_request: CodexPushRequest):
     """
-    Run Codex CLI asynchronously in the background.
+    Push committed changes and create pull request (second step).
     
-    This endpoint starts the Codex workflow in the background and returns immediately.
-    Useful for long-running code generation tasks.
+    This endpoint handles the second part of the Codex workflow:
+    1. Push the committed branch to GitHub
+    2. Create a pull request
+    3. Clean up temporary directory
     
     Args:
-        codex_request: Request containing prompt and repository information
-        background_tasks: FastAPI background tasks
+        push_request: Request containing branch info and temp directory
         
     Returns:
-        Immediate response indicating the task has started
-    """
-    try:
-        codex_service = CodexService()
-        
-        # Add the Codex workflow to background tasks
-        background_tasks.add_task(
-            codex_service.run_codex_workflow,
-            codex_request.prompt,
-            codex_request.repo,
-            "main",  # branch
-            False    # auto_push
-        )
-        
-        logger.info(f"Started async Codex workflow for repo: {codex_request.repo}")
-        return JSONResponse(
-            content={
-                "message": "Codex workflow started in background",
-                "prompt": codex_request.prompt,
-                "repo": codex_request.repo
-            },
-            status_code=202  # Accepted
-        )
-        
-    except Exception as e:
-        logger.error(f"Error starting async Codex workflow: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to start workflow: {str(e)}")
-
-
-@router.post("/run-and-push", response_model=CodexResponse)
-async def run_codex_and_push(codex_request: CodexRequest):
-    """
-    Run Codex CLI and automatically push changes with PR creation.
-    
-    This endpoint executes the complete Codex workflow including:
-    1. Clone the repository
-    2. Run Codex CLI with the prompt
-    3. Commit changes to a new branch
-    4. Push the branch and create a pull request
-    
-    Args:
-        codex_request: Request containing prompt and repository information
-        
-    Returns:
-        CodexResponse with operation results including PR URL
+        CodexPushResponse with PR URL and results
         
     Raises:
-        HTTPException: If Codex execution fails
+        HTTPException: If push or PR creation fails
     """
     try:
         codex_service = CodexService()
         
-        # Run the Codex workflow with auto-push enabled
-        result = codex_service.run_codex_workflow(
-            prompt=codex_request.prompt,
-            repo_name=codex_request.repo,
-            auto_push=True  # Auto-push and create PR
+        # Push the branch and create PR
+        result = codex_service.push_branch_and_create_pr(
+            prompt=push_request.prompt,
+            repo_name=push_request.repo_name,
+            branch_name=push_request.branch_name,
+            base_branch=push_request.base_branch,
+            temp_dir=push_request.temp_dir
         )
         
-        response = CodexResponse(
+        response = CodexPushResponse(
+            status=result["status"],
             message=result["message"],
             branch_name=result["branch_name"],
             pr_url=result["pr_url"]
         )
         
-        logger.info(f"Codex workflow with PR creation completed for repo: {codex_request.repo}")
+        logger.info(f"Codex push phase completed for branch: {push_request.branch_name}")
         return response
         
     except CodexExecutionError as e:
-        logger.error(f"Codex execution failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Codex execution error: {str(e)}")
+        logger.error(f"Codex push failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Codex push error: {str(e)}")
     except Exception as e:
-        logger.error(f"Unexpected error in run_codex_and_push: {str(e)}")
+        logger.error(f"Unexpected error in push_codex: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/cleanup")
+async def cleanup_codex(temp_dir: str):
+    """
+    Clean up temporary directory (used when user chooses not to create PR).
+    
+    Args:
+        temp_dir: Temporary directory path to clean up
+        
+    Returns:
+        Success message
+    """
+    try:
+        codex_service = CodexService()
+        codex_service.cleanup_temp_directory(temp_dir)
+        
+        logger.info(f"Cleaned up temporary directory: {temp_dir}")
+        return JSONResponse(
+            content={"message": "Temporary directory cleaned up successfully"},
+            status_code=200
+        )
+        
+    except Exception as e:
+        logger.error(f"Error cleaning up temporary directory: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Cleanup error: {str(e)}")
 
 
 @router.get("/status")
