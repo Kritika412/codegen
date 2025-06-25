@@ -255,11 +255,12 @@ function App() {
     const issue = displayIssues.find(issue => issue.id === selectedIssue);
     const prompt = issueDescription || "Add backend logic";
     const repo = issue?.repo;
+    const title = issue?.title || "Issue Title";
 
     const response = await fetch("http://localhost:8000/api/run-codex", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, repo }),
+      body: JSON.stringify({ prompt, repo, title }),
     });
     if (response.ok) {
       alert("✅ Codex is running. Check your terminal.");

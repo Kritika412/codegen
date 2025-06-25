@@ -125,6 +125,7 @@ class IssueUpdateRequest(BaseModel):
 class PromptRequest(BaseModel):
    prompt: str
    repo: str
+   title: str
 
 # Helper functions
 def normalize_text(text):
@@ -815,7 +816,7 @@ def get_sprints() -> List[Sprint]:
 async def run_codex(prompt_req: PromptRequest):
    """Run the codex with the provided prompt and repository"""
    try:
-       subprocess.Popen(["python", "run_codex_todo.py", prompt_req.prompt, prompt_req.repo])
+       subprocess.Popen(["python", "run_codex_todo.py", prompt_req.prompt, prompt_req.repo, prompt_req.title])
        return {"message": "Codex started"}
    except Exception as e:
        raise HTTPException(status_code=500, detail=f"Codex error: {str(e)}")
