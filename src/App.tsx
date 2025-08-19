@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
+import CodexTerminal from './components/CodexTerminal';
 import './App.css';
 import { apiClient } from './api/client';
 import type { ApiIssue, ApiSprint } from './api/client';
@@ -8,22 +9,22 @@ import type { ApiIssue, ApiSprint } from './api/client';
 const mockSprints = [
   {
     id: 'sprint1',
-    name: 'Sprint 34: June 14 – June 17',
-    dateRange: 'June 14 – June 17',
+    name: 'Sprint 34: June 14 — June 17',
+    dateRange: 'June 14 — June 17',
     daysRemaining: 1,
     goals: 'Improve issue tracking automation',
   },
   {
     id: 'sprint2',
-    name: 'Sprint 33: June 10 – June 13',
-    dateRange: 'June 10 – June 13',
+    name: 'Sprint 33: June 10 — June 13',
+    dateRange: 'June 10 — June 13',
     daysRemaining: 0,
     goals: 'Complete dashboard implementation',
   },
   {
     id: 'sprint3',
-    name: 'Sprint 32: June 6 – June 9',
-    dateRange: 'June 6 – June 9',
+    name: 'Sprint 32: June 6 — June 9',
+    dateRange: 'June 6 — June 9',
     daysRemaining: 0,
     goals: 'Refactor core modules',
   },
@@ -100,12 +101,13 @@ interface SprintSummary {
 }
 
 function App() {
-  // FIXED: State declarations with proper separation
+  // State declarations with proper separation
   const [selectedSprint, setSelectedSprint] = useState('sprint1');
   const [selectedIssue, setSelectedIssue] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
-  const [originalIssueDescription, setOriginalIssueDescription] = useState(''); // NEW: Track original
+  const [originalIssueDescription, setOriginalIssueDescription] = useState('');
   const [selectedLLM, setSelectedLLM] = useState('codex');
+  const [showTerminal, setShowTerminal] = useState(false);
   
   // API state
   const [sprints, setSprints] = useState<ApiSprint[]>([]);
@@ -221,7 +223,7 @@ function App() {
   const displaySprints = useMockData ? mockSprints : sprints.length > 0 ? sprints.map(s => ({
     id: s.id,
     name: s.name,
-    dateRange: s.start_date && s.end_date ? `${formatDate(s.start_date)} – ${formatDate(s.end_date)}` : s.name,
+    dateRange: s.start_date && s.end_date ? `${formatDate(s.start_date)} — ${formatDate(s.end_date)}` : s.name,
     daysRemaining: s.end_date ? Math.max(0, Math.ceil((new Date(s.end_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))) : 0,
     goals: 'Sprint goals from API'
   })) : mockSprints;
@@ -252,6 +254,17 @@ function App() {
   };
 
   const handleCode = async () => {
+    // Show terminal instead of running directly
+    setShowTerminal(true);
+    // Scroll to terminal after a brief delay
+    setTimeout(() => {
+      document.querySelector('.bg-gray-900')?.scrollIntoView({ 
+        behavior: 'smooth' 
+      });
+    }, 100);
+  };
+
+  const handleCodeOld = async () => {
     const issue = displayIssues.find(issue => issue.id === selectedIssue);
     const prompt = issueDescription || "Add backend logic";
     const repo = issue?.repo;
@@ -269,7 +282,7 @@ function App() {
     }
   };
   
-  // FIXED: Handle issue selection changes properly
+  // Handle issue selection changes properly
   const handleIssueSelectionChange = (issueId: string) => {
     setSelectedIssue(issueId);
     const issue = displayIssues.find(issue => issue.id === issueId);
@@ -283,7 +296,7 @@ function App() {
     }
   };
 
-  // FIXED: Handle saving issue description changes
+  // Handle saving issue description changes
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -349,7 +362,7 @@ function App() {
     }
   };
 
-  // FIXED: Better useEffect for issue description handling
+  // Better useEffect for issue description handling
   useEffect(() => {
     if (displayIssues.length > 0) {
       // Only update if we don't have a selected issue or if the current selection is not in the new list
@@ -442,7 +455,7 @@ function App() {
         <section className="bg-indigo-50 p-6 rounded-xl shadow border border-indigo-200">
           <h2 className="text-xl font-semibold mb-2">Ask Codex or Claude for Help</h2>
           <form className="space-y-4" onSubmit={handleSave}>
-            {/* FIXED: Issue selection dropdown */}
+            {/* Issue selection dropdown */}
             <div>
               <label htmlFor="issue-select" className="block text-sm font-medium text-gray-700">
                 Select Issue
@@ -461,7 +474,7 @@ function App() {
               </select>
             </div>
 
-            {/* FIXED: Issue description textarea with change indicator */}
+            {/* Issue description textarea with change indicator */}
             <div>
               <label htmlFor="issue-description" className="block text-sm font-medium text-gray-700">
                 Edit Issue Description
@@ -513,9 +526,25 @@ function App() {
                 className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700"
                 disabled={isUpdatingIssue}
               >
-                Code
+                {showTerminal ? '📺 Terminal Open' : '🖥️ Open Terminal'}
               </button>
-              {/* FIXED: Save button now works properly */}
+              <button
+                type="button"
+                onClick={handleCodeOld}
+                className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600"
+                disabled={isUpdatingIssue}
+              >
+                Run Old Way
+              </button>
+              {showTerminal && (
+                <button
+                  type="button"
+                  onClick={() => setShowTerminal(false)}
+                  className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700"
+                >
+                  Close Terminal
+                </button>
+              )}
               <button
                 type="submit"
                 className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
@@ -526,6 +555,16 @@ function App() {
             </div>
           </form>
         </section>
+
+        {/* Codex Terminal - Shows when showTerminal is true */}
+        {showTerminal && (
+          <CodexTerminal
+            issueId={selectedIssue}
+            issueTitle={displayIssues.find(i => i.id === selectedIssue)?.title}
+            issueDescription={issueDescription}
+            repo={displayIssues.find(i => i.id === selectedIssue)?.repo}
+          />
+        )}
 
         {/* Sprint Info */}
         <section className="bg-white p-6 rounded-xl shadow">
@@ -575,12 +614,23 @@ function App() {
               <div className="text-gray-400 text-center">No issues for this sprint.</div>
             ) : (
               displayIssues.map((issue) => (
-                <div key={issue.id} className="border p-4 rounded-md flex justify-between items-center bg-gray-50">
+                <div 
+                  key={issue.id} 
+                  className={`border p-4 rounded-md flex justify-between items-center ${
+                    selectedIssue === issue.id ? 'bg-indigo-50 border-indigo-300' : 'bg-gray-50'
+                  } hover:bg-gray-100 cursor-pointer transition-colors`}
+                  onClick={() => handleIssueSelectionChange(issue.id)}
+                >
                   <div>
                     <p className="font-medium">[{issue.repo}] [#{issue.number}] {issue.title}</p>
                     <p className="text-sm text-gray-500">
                       Assigned to: {issue.assignee ?? 'Unassigned'}
                     </p>
+                    {selectedIssue === issue.id && (
+                      <p className="text-xs text-indigo-600 mt-1">
+                        ✓ Selected for Codex
+                      </p>
+                    )}
                   </div>
                   {/* Fixed: Use the actual GitHub URL from the API */}
                   {issue.url ? (
@@ -589,6 +639,7 @@ function App() {
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-blue-600 hover:underline"
+                      onClick={(e) => e.stopPropagation()}
                     >
                       View on GitHub
                     </a>

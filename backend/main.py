@@ -12,6 +12,9 @@ import re
 import unicodedata
 import logging
 from logging.handlers import RotatingFileHandler
+from fastapi import WebSocket, WebSocketDisconnect
+from terminal_service import terminal_manager
+import asyncio
 
 # Load environment variables
 load_dotenv()
@@ -498,6 +501,74 @@ def update_issue_description(issue_number: int, repo_name: str, new_body: str) -
        logger.error(f"Error updating issue #{issue_number}: {str(e)}")
        return False
 
+@app.websocket("/ws/terminal")
+async def terminal_websocket(websocket: WebSocket):
+    """WebSocket endpoint for terminal sessions"""
+    await websocket.accept()
+    session_id = None
+    
+    try:
+        # Create a new session
+        session_id = await terminal_manager.create_session(websocket)
+        await websocket.send_json({
+            "type": "connected",
+            "session_id": session_id,
+            "message": "Terminal connected successfully"
+        })
+        
+        # Handle messages
+        while True:
+            data = await websocket.receive_json()
+            session = terminal_manager.get_session(session_id)
+            
+            if not session:
+                await websocket.send_json({
+                    "type": "error",
+                    "message": "Session not found"
+                })
+                break
+            
+            # Handle different message types
+            if data['type'] == 'start_codex':
+                asyncio.create_task(
+                    session.start_codex(
+                        data.get('prompt', 'Default prompt'),
+                        data.get('repo', 'hail007/Agent-Testing'),
+                        data.get('title', 'Codex Task')
+                    )
+                )
+            
+            elif data['type'] == 'input':
+                await session.send_input(data.get('data', ''))
+            
+            elif data['type'] == 'stop':
+                await session.stop()
+                await websocket.send_json({
+                    "type": "status",
+                    "data": "stopped"
+                })
+            
+            elif data['type'] == 'get_logs':
+                logs = session.get_logs()
+                await websocket.send_json({
+                    "type": "logs",
+                    "data": logs
+                })
+    
+    except WebSocketDisconnect:
+        logger.info(f"Terminal WebSocket disconnected for session {session_id}")
+    except Exception as e:
+        logger.error(f"Terminal WebSocket error: {str(e)}")
+        await websocket.send_json({
+            "type": "error",
+            "message": str(e)
+        })
+    finally:
+        if session_id:
+            await terminal_manager.remove_session(session_id)
+
+
+
 # Routes
 @app.get("/")
 def root():
@@ -576,6 +647,14 @@ def get_issues(sprint_name: Optional[str] = None, status: Optional[str] = None):
        import traceback
        logger.error(f"Traceback: {traceback.format_exc()}")
        raise HTTPException(status_code=500, detail=f"Issue fetch error: {str(e)}")
+# Add endpoint to get available sessions
+@app.get("/api/terminal/sessions")
+def get_terminal_sessions():
+    """Get list of active terminal sessions"""
+    return {
+        "sessions": list(terminal_manager.sessions.keys()),
+        "count": len(terminal_manager.sessions)
+    }
 
 @app.get("/api/sprint-summary", response_model=SprintSummary)
 def get_sprint_summary(sprint_name: str):
