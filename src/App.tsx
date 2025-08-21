@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import CodexTerminal from './components/CodexTerminal';
+import RepositorySelector from './components/RepositorySelector';
+import ProjectSelector from './components/ProjectSelector';
 import './App.css';
 import { apiClient } from './api/client';
 import type { ApiIssue, ApiSprint } from './api/client';
@@ -30,55 +32,6 @@ const mockSprints = [
   },
 ];
 
-const mockIssues = [
-  {
-    id: 345,
-    title: 'Add auth middleware',
-    assignee: 'Alice',
-    status: 'in-progress',
-    body: 'Implement authentication middleware for API routes.',
-  },
-  {
-    id: 346,
-    title: 'Fix broken PR status badge',
-    assignee: 'Bob',
-    status: 'blocked',
-    body: 'The PR status badge is not updating correctly on the dashboard.',
-  },
-];
-
-const mockAgentTasks = [
-  {
-    id: 'task1',
-    agent: 'claude',
-    description: 'Generate integration tests',
-    status: 'running',
-  },
-  {
-    id: 'task2',
-    agent: 'codex',
-    description: 'refactoring: utils module',
-    status: 'done',
-  },
-];
-
-const mockPullRequests = [
-  {
-    id: 123,
-    title: 'Add dashboard view',
-    author: 'Carol',
-    branch: 'feature/dashboard',
-    status: 'ci-passed',
-  },
-  {
-    id: 124,
-    title: 'Update agent task handler',
-    author: 'Dave',
-    branch: 'refactor/agent-tasks',
-    status: 'needs-review',
-  },
-];
-
 const mockStats = {
   total: 18,
   completed: 7,
@@ -104,6 +57,9 @@ function App() {
   // State declarations with proper separation
   const [selectedSprint, setSelectedSprint] = useState('sprint1');
   const [selectedIssue, setSelectedIssue] = useState('');
+  const [selectedRepo, setSelectedRepo] = useState('harmoniaailabs/Symptom-to-Next-Step-Advisor-Non-Diagnostic-');
+  const [selectedProjectNumber, setSelectedProjectNumber] = useState<number>(1); // Default project
+  const [availableProjects, setAvailableProjects] = useState<number[]>([]);
   const [issueDescription, setIssueDescription] = useState('');
   const [originalIssueDescription, setOriginalIssueDescription] = useState('');
   const [selectedLLM, setSelectedLLM] = useState('codex');
@@ -133,7 +89,7 @@ function App() {
     setLoading(true);
     setError(null);
     try {
-      const issueData = await apiClient.getIssues(sprintName);
+      const issueData = await apiClient.getIssues(sprintName, undefined, selectedProjectNumber);
       setIssues(issueData);
     } catch (error) {
       console.warn('Failed to fetch issues:', error);
@@ -147,11 +103,7 @@ function App() {
   // Fetch sprint summary
   const fetchSprintSummary = async (sprintName: string) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/sprint-summary?sprint_name=${encodeURIComponent(sprintName)}`);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      const summary = await response.json();
+      const summary = await apiClient.getSprintSummary(sprintName, selectedProjectNumber);
       setSprintSummary(summary);
     } catch (error) {
       console.error('Error fetching sprint summary:', error);
@@ -164,7 +116,7 @@ function App() {
     setLoading(true);
     setError(null);
     try {
-      const sprintData = await apiClient.getSprints();
+      const sprintData = await apiClient.getSprints(selectedProjectNumber);
       setSprints(sprintData);
       setUseMockData(false);
     } catch (error) {
@@ -186,6 +138,17 @@ function App() {
     initializeData();
   }, []);
 
+  // Refetch data when project changes
+  useEffect(() => {
+    if (selectedProjectNumber) {
+      fetchSprints();
+      // Clear current sprint selection to force user to reselect
+      setSelectedSprint('');
+      setIssues([]);
+      setSprintSummary(null);
+    }
+  }, [selectedProjectNumber]);
+
   // Fetch issues for the period when sprint changes
   useEffect(() => {
     if (!useMockData && selectedSprint && sprints.length > 0) {
@@ -195,7 +158,7 @@ function App() {
         fetchSprintSummary(currentSprint.name);
       }
     }
-  }, [selectedSprint, sprints, useMockData]);
+  }, [selectedSprint, sprints, useMockData, selectedProjectNumber]);
 
   // Make sure we have a selected sprint when sprints are loaded
   useEffect(() => {
@@ -249,6 +212,25 @@ function App() {
     setSelectedSprint(sprintId);
   };
 
+  // Handler for repository change
+  const handleRepoChange = (repo: string) => {
+    setSelectedRepo(repo);
+  };
+
+  // Handler for project change
+  const handleProjectChange = (projectNumber: number) => {
+    setSelectedProjectNumber(projectNumber);
+  };
+
+  // Handler for when repository selector finds available projects
+  const handleProjectsFound = (projects: number[]) => {
+    setAvailableProjects(projects);
+    // If the current selected project is not in the available projects, switch to the first available
+    if (projects.length > 0 && !projects.includes(selectedProjectNumber)) {
+      setSelectedProjectNumber(projects[0]);
+    }
+  };
+
   const handleAsk = () => {
     console.log('Asking for help with issue:', selectedIssue);
   };
@@ -267,18 +249,15 @@ function App() {
   const handleCodeOld = async () => {
     const issue = displayIssues.find(issue => issue.id === selectedIssue);
     const prompt = issueDescription || "Add backend logic";
-    const repo = issue?.repo;
+    const repo = selectedRepo; // Use selected repo instead of issue repo
     const title = issue?.title || "Issue Title";
 
-    const response = await fetch("http://localhost:8000/api/run-codex", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, repo, title }),
-    });
-    if (response.ok) {
-      alert("✅ Codex is running. Check your terminal.");
-    } else {
-      alert("❌ Failed to trigger Codex.");
+    try {
+      const result = await apiClient.runCodex(prompt, repo, title);
+      alert(`✅ ${result.message}`);
+    } catch (error) {
+      alert("❌ Failed to trigger Codex. See console for details.");
+      console.error(error);
     }
   };
   
@@ -416,10 +395,40 @@ function App() {
         {loading && (
           <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
             <div className="text-sm text-blue-700">
-              🔄 Loading issues...
+              🔄 Loading...
             </div>
           </div>
         )}
+
+        {/* Project and Repository Selection */}
+        <section className="bg-white p-6 rounded-xl shadow border border-gray-200">
+          <h2 className="text-xl font-semibold mb-4">Project and Repository Configuration</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Project Selector */}
+            <ProjectSelector
+              selectedProjectNumber={selectedProjectNumber}
+              onProjectChange={handleProjectChange}
+            />
+            
+            {/* Repository Selector */}
+            <RepositorySelector
+              selectedRepo={selectedRepo}
+              onRepoChange={handleRepoChange}
+              onProjectsFound={handleProjectsFound}
+            />
+          </div>
+          
+          {/* Context Info */}
+          <div className="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
+            <div className="text-sm text-blue-800">
+              <strong>📋 Current Context:</strong> Project #{selectedProjectNumber} | Repository: {selectedRepo}
+              <br />
+              <span className="text-xs text-blue-600">
+                Sprints and issues will be loaded from the selected project. Repository is used for Codex operations.
+              </span>
+            </div>
+          </div>
+        </section>
 
         {/* Sprint Picker */}
         <section className="bg-white p-6 rounded-xl shadow border border-gray-200">
@@ -427,24 +436,30 @@ function App() {
           <form className="space-y-4">
             <div>
               <label htmlFor="sprint-select" className="block text-sm font-medium text-gray-700">
-                GitHub Sprint (Milestone)
+                GitHub Sprint (Milestone) - Project #{selectedProjectNumber}
               </label>
               <select
                 id="sprint-select"
                 value={selectedSprint}
                 onChange={(e) => handleSprintChange(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                disabled={displaySprints.length === 0}
               >
-                {displaySprints.map((sprint) => (
-                  <option key={sprint.id} value={sprint.id}>
-                    {sprint.name}
-                  </option>
-                ))}
+                {displaySprints.length === 0 ? (
+                  <option value="">No sprints available for this project</option>
+                ) : (
+                  displaySprints.map((sprint) => (
+                    <option key={sprint.id} value={sprint.id}>
+                      {sprint.name}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
             <button
               type="submit"
-              className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
+              className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 disabled:bg-gray-400"
+              disabled={!selectedSprint}
             >
               Load Sprint
             </button>
@@ -458,19 +473,24 @@ function App() {
             {/* Issue selection dropdown */}
             <div>
               <label htmlFor="issue-select" className="block text-sm font-medium text-gray-700">
-                Select Issue
+                Select Issue from Project #{selectedProjectNumber}
               </label>
               <select
                 id="issue-select"
                 value={selectedIssue}
                 onChange={(e) => handleIssueSelectionChange(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                disabled={displayIssues.length === 0}
               >
-                {displayIssues.map((issue) => (
-                  <option key={issue.id} value={issue.id}>
-                    [{issue.repo}] [#{issue.number}] {issue.title}
-                  </option>
-                ))}
+                {displayIssues.length === 0 ? (
+                  <option value="">No issues available for this sprint</option>
+                ) : (
+                  displayIssues.map((issue) => (
+                    <option key={issue.id} value={issue.id}>
+                      [{issue.repo}] [#{issue.number}] {issue.title}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 
@@ -511,6 +531,18 @@ function App() {
               </select>
             </div>
 
+            {/* Execution Context Display */}
+            <div className="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
+  <div className="text-sm text-blue-800">
+    <strong>🎯 Execution Context:</strong> 
+    {selectedProjectNumber === 1 ? ' Hail Project' : ` Project #${selectedProjectNumber}`} | Repository: {selectedRepo}
+    <br />
+    <span className="text-xs text-blue-600">
+      Iterations and issues will be loaded from the selected project. Repository is used for Codex operations.
+    </span>
+  </div>
+</div>
+
             <div className="flex space-x-4">
               <button
                 type="button"
@@ -524,7 +556,7 @@ function App() {
                 type="button"
                 onClick={handleCode}
                 className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700"
-                disabled={isUpdatingIssue}
+                disabled={isUpdatingIssue || !selectedIssue}
               >
                 {showTerminal ? '📺 Terminal Open' : '🖥️ Open Terminal'}
               </button>
@@ -532,7 +564,7 @@ function App() {
                 type="button"
                 onClick={handleCodeOld}
                 className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600"
-                disabled={isUpdatingIssue}
+                disabled={isUpdatingIssue || !selectedIssue}
               >
                 Run Old Way
               </button>
@@ -562,56 +594,80 @@ function App() {
             issueId={selectedIssue}
             issueTitle={displayIssues.find(i => i.id === selectedIssue)?.title}
             issueDescription={issueDescription}
-            repo={displayIssues.find(i => i.id === selectedIssue)?.repo}
+            repo={selectedRepo} // Use selected repo instead of issue repo
           />
         )}
 
         {/* Sprint Info */}
-        <section className="bg-white p-6 rounded-xl shadow">
-          <h2 className="text-2xl font-bold mb-2">
-            Current Sprint: {sprintSummary && sprintSummary.start_date && sprintSummary.end_date ? 
-              `${formatDate(sprintSummary.start_date)} - ${formatDate(sprintSummary.end_date)}` : 
-              currentSprint.dateRange
-            }
-          </h2>
-          <p className="text-gray-600">
-            Days Remaining: <strong>{sprintSummary ? sprintSummary.days_remaining : currentSprint.daysRemaining}</strong>
-          </p>
-          <p className="text-gray-600">
-            Sprint Goals: {sprintSummary ? sprintSummary.sprint_goals : currentSprint.goals}
-          </p>
-        </section>
+        {currentSprint && (
+          <section className="bg-white p-6 rounded-xl shadow">
+            <h2 className="text-2xl font-bold mb-2">
+              Current Sprint: {sprintSummary && sprintSummary.start_date && sprintSummary.end_date ? 
+                `${formatDate(sprintSummary.start_date)} - ${formatDate(sprintSummary.end_date)}` : 
+                currentSprint.dateRange
+              }
+            </h2>
+            <p className="text-gray-600">
+              Days Remaining: <strong>{sprintSummary ? sprintSummary.days_remaining : currentSprint.daysRemaining}</strong>
+            </p>
+            <p className="text-gray-600">
+              Sprint Goals: {sprintSummary ? sprintSummary.sprint_goals : currentSprint.goals}
+            </p>
+            <p className="text-sm text-blue-600 mt-2">
+              📋 Project #{selectedProjectNumber} | 🎯 Repository: {selectedRepo}
+            </p>
+          </section>
+        )}
 
         {/* Sprint Status Summary */}
-        <section className="bg-white p-6 rounded-xl shadow grid grid-cols-2 md:grid-cols-5 gap-4">
-          <div className="text-center">
-            <div className="text-3xl font-bold">{sprintSummary ? sprintSummary.total_issues : mockStats.total}</div>
-            <div className="text-sm text-gray-500">Total Issues</div>
-          </div>
-          <div className="text-center">
-            <div className="text-3xl font-bold text-gray-600">{sprintSummary ? sprintSummary.backlog : 0}</div>
-            <div className="text-sm text-gray-500">Backlog</div>
-          </div>
-          <div className="text-center">
-            <div className="text-3xl font-bold text-blue-600">{sprintSummary ? sprintSummary.ready : 0}</div>
-            <div className="text-sm text-gray-500">Ready</div>
-          </div>
-          <div className="text-center">
-            <div className="text-3xl font-bold text-yellow-500">{sprintSummary ? sprintSummary.in_progress : mockStats.inProgress}</div>
-            <div className="text-sm text-gray-500">In Progress</div>
-          </div>
-          <div className="text-center">
-            <div className="text-3xl font-bold text-green-600">{sprintSummary ? sprintSummary.in_review : 0}</div>
-            <div className="text-sm text-gray-500">In Review</div>
-          </div>
-        </section>
+        {currentSprint && (
+          <section className="bg-white p-6 rounded-xl shadow grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="text-center">
+              <div className="text-3xl font-bold">{sprintSummary ? sprintSummary.total_issues : mockStats.total}</div>
+              <div className="text-sm text-gray-500">Total Issues</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-gray-600">{sprintSummary ? sprintSummary.backlog : 0}</div>
+              <div className="text-sm text-gray-500">Backlog</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-blue-600">{sprintSummary ? sprintSummary.ready : 0}</div>
+              <div className="text-sm text-gray-500">Ready</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-yellow-500">{sprintSummary ? sprintSummary.in_progress : mockStats.inProgress}</div>
+              <div className="text-sm text-gray-500">In Progress</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-green-600">{sprintSummary ? sprintSummary.in_review : 0}</div>
+              <div className="text-sm text-gray-500">In Review</div>
+            </div>
+          </section>
+        )}
 
         {/* Issues List */}
         <section className="bg-white p-6 rounded-xl shadow">
-          <h3 className="text-xl font-semibold mb-4">Sprint Issues</h3>
+          <h3 className="text-xl font-semibold mb-4">
+            Sprint Issues 
+            {selectedProjectNumber && (
+              <span className="text-sm text-gray-500 ml-2">(Project #{selectedProjectNumber})</span>
+            )}
+          </h3>
           <div className="space-y-4">
             {displayIssues.length === 0 ? (
-              <div className="text-gray-400 text-center">No issues for this sprint.</div>
+              <div className="text-gray-400 text-center py-8">
+                {!selectedSprint ? (
+                  <div>
+                    <div className="text-lg mb-2">📋 Select a Sprint</div>
+                    <div className="text-sm">Choose a sprint from Project #{selectedProjectNumber} to view issues.</div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="text-lg mb-2">📝 No Issues Found</div>
+                    <div className="text-sm">No issues found for this sprint in Project #{selectedProjectNumber}.</div>
+                  </div>
+                )}
+              </div>
             ) : (
               displayIssues.map((issue) => (
                 <div 
@@ -628,7 +684,7 @@ function App() {
                     </p>
                     {selectedIssue === issue.id && (
                       <p className="text-xs text-indigo-600 mt-1">
-                        ✓ Selected for Codex
+                        ✓ Selected for Codex → Target Repo: {selectedRepo}
                       </p>
                     )}
                   </div>
@@ -657,6 +713,7 @@ function App() {
           <h3 className="text-xl font-semibold mb-4">Running Tasks (Agents)</h3>
           <div className="text-gray-400 text-center py-8">
             🚧 This feature is under development.
+            <div className="text-xs mt-2">Future: Show active Codex tasks across all projects and repositories</div>
           </div>
         </section>
 
@@ -665,6 +722,7 @@ function App() {
           <h3 className="text-xl font-semibold mb-4">Pull Requests</h3>
           <div className="text-gray-400 text-center py-8">
             🚧 This feature is under development.
+            <div className="text-xs mt-2">Future: Show PRs from selected repository: {selectedRepo}</div>
           </div>
         </section>
       </div>

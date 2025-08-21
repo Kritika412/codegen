@@ -38,7 +38,7 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
         background: '#1a1a1a',
         foreground: '#d4d4d4',
         cursor: '#ffffff',
-        selectionBackground: '#264f78',  // Changed from 'selection' to 'selectionBackground'
+        selectionBackground: '#264f78',
         black: '#000000',
         red: '#cd3131',
         green: '#0dbc79',
@@ -168,26 +168,27 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
       return;
     }
 
- // Clear terminal
- if (terminal) {
-    terminal.clear();
-    terminal.writeln('🚀 Starting Codex...\n');
-  }
+    // Clear terminal
+    if (terminal) {
+      terminal.clear();
+      terminal.writeln('🚀 Starting Codex...\n');
+    }
 
-  // Make sure we're using the correct repo
-  const actualRepo = repo && repo !== 'Unknown' && repo !== 'Draft Issue' 
-    ? repo 
-    : 'hail007/Agent-Testing';  // Your default test repo
+    // Use the repo passed from props (selected in the UI)
+    const actualRepo = repo && repo !== 'Unknown' && repo !== 'Draft Issue' 
+      ? repo 
+      : 'hail007/Agent-Testing';  // fallback
 
-  // Send command to start Codex
-  socket.send(JSON.stringify({
-    type: 'start_codex',
-    prompt: prompt,
-    repo: actualRepo,  // Use the correct repo
-    title: issueTitle || 'Codex Task',
-    auto_mode: autoMode ? 'auto' : 'interactive'
-  }));
-};
+    // Send command to start Codex
+    setIsRunning(true);
+    socket.send(JSON.stringify({
+      type: 'start_codex',
+      prompt: prompt,
+      repo: actualRepo,
+      title: issueTitle || 'Codex Task',
+      auto_mode: autoMode ? 'auto' : 'interactive'
+    }));
+  };
 
   const stopCodex = () => {
     if (socket && socket.readyState === WebSocket.OPEN) {
@@ -217,6 +218,14 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
     <div className="bg-gray-900 rounded-lg p-4 mb-6">
       <div className="mb-4">
         <h3 className="text-white text-lg font-semibold mb-2">Codex Terminal</h3>
+        
+        {/* Repository Info Display */}
+        <div className="mb-3 p-2 bg-gray-800 rounded border border-gray-700">
+          <div className="text-sm text-gray-300">
+            <span className="font-medium">Target Repository:</span> 
+            <span className="text-blue-400 ml-2">{repo}</span>
+          </div>
+        </div>
         
         {/* Prompt Input */}
         <div className="mb-3">
