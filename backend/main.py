@@ -1162,13 +1162,17 @@ def update_issue_description(issue_number: int, repo_name: str, new_body: str) -
 
 @app.websocket("/ws/terminal")
 async def terminal_websocket(websocket: WebSocket):
-    """WebSocket endpoint for terminal sessions"""
-    await websocket.accept()
+    """WebSocket endpoint for terminal sessions with proper Codex integration"""
     session_id = None
     
     try:
+        await websocket.accept()
+        logger.info("WebSocket connection accepted")
+        
         # Create a new session
         session_id = await terminal_manager.create_session(websocket)
+        logger.info(f"Created session: {session_id}")
+        
         await websocket.send_json({
             "type": "connected",
             "session_id": session_id,
@@ -1177,57 +1181,75 @@ async def terminal_websocket(websocket: WebSocket):
         
         # Handle messages
         while True:
-            data = await websocket.receive_json()
-            session = terminal_manager.get_session(session_id)
-            
-            if not session:
-                await websocket.send_json({
-                    "type": "error",
-                    "message": "Session not found"
-                })
-                break
-            
-            # Handle different message types
-            if data['type'] == 'start_codex':
-                asyncio.create_task(
-                    session.start_codex(
-                        data.get('prompt', 'Default prompt'),
-                        data.get('repo', 'harmoniaailabs/Symptom-to-Next-Step-Advisor-Non-Diagnostic-'),
-                        data.get('title', 'Codex Task')
+            try:
+                data = await websocket.receive_json()
+                session = terminal_manager.get_session(session_id)
+                
+                if not session:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Session not found"
+                    })
+                    break
+                
+                # Handle different message types
+                if data['type'] == 'start_codex':
+                    # Get the auto mode from the frontend
+                    auto_mode = data.get('auto_mode', 'interactive')  # Default to interactive
+                    
+                    logger.info(f"Starting Codex with mode: {auto_mode}")
+                    
+                    # Start Codex with proper mode
+                    asyncio.create_task(
+                        session.start_codex(
+                            prompt=data.get('prompt', 'Default prompt'),
+                            repo=data.get('repo', 'hail007/Agent-Testing'),
+                            title=data.get('title', 'Codex Task'),
+                            auto_mode=auto_mode  # Pass the mode
+                        )
                     )
-                )
-            
-            elif data['type'] == 'input':
-                await session.send_input(data.get('data', ''))
-            
-            elif data['type'] == 'stop':
-                await session.stop()
-                await websocket.send_json({
-                    "type": "status",
-                    "data": "stopped"
-                })
-            
-            elif data['type'] == 'get_logs':
-                logs = session.get_logs()
-                await websocket.send_json({
-                    "type": "logs",
-                    "data": logs
-                })
+                
+                elif data['type'] == 'input':
+                    # This is crucial for interactive mode!
+                    await session.send_input(data.get('data', ''))
+                
+                elif data['type'] == 'stop':
+                    await session.stop()
+                    await websocket.send_json({
+                        "type": "status",
+                        "data": "stopped"
+                    })
+                
+                elif data['type'] == 'get_logs':
+                    logs = session.get_logs()
+                    await websocket.send_json({
+                        "type": "logs",
+                        "data": logs
+                    })
+                    
+            except asyncio.CancelledError:
+                logger.info("WebSocket task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error handling message: {str(e)}")
+                # Don't break on message errors, continue listening
+                try:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Message handling error: {str(e)}"
+                    })
+                except:
+                    break  # WebSocket is closed
     
     except WebSocketDisconnect:
         logger.info(f"Terminal WebSocket disconnected for session {session_id}")
     except Exception as e:
         logger.error(f"Terminal WebSocket error: {str(e)}")
-        await websocket.send_json({
-            "type": "error",
-            "message": str(e)
-        })
     finally:
         if session_id:
             await terminal_manager.remove_session(session_id)
-
-
-
+            logger.info(f"Cleaned up session: {session_id}")
+            
 # Routes
 @app.get("/")
 def root():
