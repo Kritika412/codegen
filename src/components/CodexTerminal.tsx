@@ -197,7 +197,7 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
   // Effect with proper cleanup
   useEffect(() => {
     let mounted = true;
-    
+
     // Delay initialization slightly to avoid React Strict Mode issues
     const timer = setTimeout(() => {
       if (mounted) {
@@ -210,7 +210,7 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
       clearTimeout(timer);
       cleanup();
     };
-  }, []); // Empty dependency array
+  }, [initialize, cleanup]);
 
   // Update prompt when issueDescription changes
   useEffect(() => {
@@ -232,7 +232,7 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
     if (terminalRef2.current) {
       terminalRef2.current.clear();
       terminalRef2.current.writeln('🚀 Starting REAL Codex Agent...\n');
-      
+
       if (!autoMode) {
         terminalRef2.current.writeln('🎮 Interactive Mode: You can type responses when Codex asks questions');
         terminalRef2.current.writeln('💡 Tip: Follow Codex prompts and provide input as needed');
@@ -241,6 +241,9 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
         terminalRef2.current.writeln('🤖 Auto Mode: Codex will run automatically');
         terminalRef2.current.writeln('');
       }
+
+      // Ensure the terminal has focus so keystrokes are captured
+      terminalRef2.current.focus();
     }
 
     // Use the repo passed from props
