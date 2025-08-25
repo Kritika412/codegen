@@ -6,6 +6,7 @@ import sys
 import platform
 import shutil as sh
 import threading
+import signal
 from github import Github
 from dotenv import load_dotenv
 from datetime import datetime
@@ -83,22 +84,22 @@ def run_codex_with_pty(codex_path, prompt, temp_dir):
             dimensions=(30, 120)  # rows, cols
         )
 
-        # Forward user input to Codex in interactive mode
-        if not AUTO_MODE:
-            def forward_input():
-                while True:
-                    try:
-                        data = sys.stdin.read(1)
-                        if not data:
-                            break
-                        if data == '\x03':
-                            child.sendcontrol('c')
-                        else:
-                            child.send(data)
-                    except Exception:
+        # Forward user input to Codex and allow Ctrl+C passthrough
+        def forward_input():
+            while True:
+                try:
+                    data = os.read(sys.stdin.fileno(), 1)
+                    if not data:
                         break
+                    if data == b"\x03":
+                        child.sendcontrol("c")
+                    else:
+                        child.send(data.decode())
+                except Exception:
+                    break
 
-            threading.Thread(target=forward_input, daemon=True).start()
+        prev_sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        threading.Thread(target=forward_input, daemon=True).start()
         
         # Set up real-time output streaming
         output_buffer = []
@@ -163,6 +164,9 @@ def run_codex_with_pty(codex_path, prompt, temp_dir):
         # Wait for process to complete
         child.close()
         exit_code = child.exitstatus
+
+        # Restore original SIGINT handler
+        signal.signal(signal.SIGINT, prev_sigint)
         
         print("-" * 60, flush=True)
         print(f"✅ Codex PTY process completed with exit code: {exit_code}", flush=True)
