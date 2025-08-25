@@ -172,7 +172,7 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
 
     // Handle terminal input
     term.onData((data) => {
-      if (socketRef.current?.readyState === WebSocket.OPEN && isRunning) {
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
         socketRef.current.send(JSON.stringify({
           type: 'input',
           data: data
@@ -192,7 +192,7 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
       window.removeEventListener('resize', handleResize);
       cleanup();
     };
-  }, [cleanup, isRunning]);
+  }, [cleanup]);
 
   // Effect with proper cleanup
   useEffect(() => {
