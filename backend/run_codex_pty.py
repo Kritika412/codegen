@@ -5,6 +5,7 @@ import shutil
 import sys
 import platform
 import shutil as sh
+import threading
 from github import Github
 from dotenv import load_dotenv
 from datetime import datetime
@@ -12,7 +13,8 @@ import pexpect
 import time
 
 # === Load environment variables ===
-load_dotenv()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
@@ -23,9 +25,9 @@ REPO_NAME = sys.argv[2] if len(sys.argv) > 2 else "hail007/Agent-Testing"
 REPO_URL = f"https://github.com/{REPO_NAME}.git"
 TITLE = sys.argv[3] if len(sys.argv) > 3 else "Codex Todo"
 
-# Enable non-interactive mode by default so the script can run without
-# requiring manual input. Pass "manual" as the fourth argument to disable.
-AUTO_MODE = not (len(sys.argv) > 4 and sys.argv[4] == "manual")
+# Enable interactive mode by default. Pass "auto" as the fourth argument
+# to enable automatic prompt responses.
+AUTO_MODE = len(sys.argv) > 4 and sys.argv[4] == "auto"
 
 print(f'📝 Prompt: {PROMPT}', flush=True)
 print(f'📦 Repository: {REPO_NAME}', flush=True)
@@ -80,6 +82,23 @@ def run_codex_with_pty(codex_path, prompt, temp_dir):
             encoding='utf-8',
             dimensions=(30, 120)  # rows, cols
         )
+
+        # Forward user input to Codex in interactive mode
+        if not AUTO_MODE:
+            def forward_input():
+                while True:
+                    try:
+                        data = sys.stdin.read(1)
+                        if not data:
+                            break
+                        if data == '\x03':
+                            child.sendcontrol('c')
+                        else:
+                            child.send(data)
+                    except Exception:
+                        break
+
+            threading.Thread(target=forward_input, daemon=True).start()
         
         # Set up real-time output streaming
         output_buffer = []
