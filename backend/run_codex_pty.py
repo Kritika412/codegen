@@ -22,7 +22,10 @@ PROMPT = sys.argv[1] if len(sys.argv) > 1 else "Write helpful backend code"
 REPO_NAME = sys.argv[2] if len(sys.argv) > 2 else "hail007/Agent-Testing"
 REPO_URL = f"https://github.com/{REPO_NAME}.git"
 TITLE = sys.argv[3] if len(sys.argv) > 3 else "Codex Todo"
-AUTO_MODE = len(sys.argv) > 4 and sys.argv[4] == "auto"
+
+# Enable non-interactive mode by default so the script can run without
+# requiring manual input. Pass "manual" as the fourth argument to disable.
+AUTO_MODE = not (len(sys.argv) > 4 and sys.argv[4] == "manual")
 
 print(f'📝 Prompt: {PROMPT}', flush=True)
 print(f'📦 Repository: {REPO_NAME}', flush=True)
@@ -113,11 +116,15 @@ def run_codex_with_pty(codex_path, prompt, temp_dir):
                             print_and_store(child.before)
                         if child.after and child.after != pexpect.EOF:
                             print_and_store(child.after)
-                        
+
                         # Handle prompts automatically in auto mode
-                        if index in [4, 5] and AUTO_MODE:  # Yes/no or enter prompts
+                        if AUTO_MODE and index in [3, 4, 5]:
+                            # Generic questions: send empty line
+                            # Yes/no prompts: answer 'y'
+                            # Press enter prompts: send newline
                             print("\n🤖 Auto-responding to prompt...", flush=True)
-                            child.sendline('y')
+                            response = '' if index in [3, 5] else 'y'
+                            child.sendline(response)
                             time.sleep(0.5)
                 
                 except pexpect.TIMEOUT:
