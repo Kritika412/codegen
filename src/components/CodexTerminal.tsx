@@ -4,33 +4,29 @@ import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 
 interface CodexTerminalProps {
-  issueId?: string;
   issueTitle?: string;
   issueDescription?: string;
   repo?: string;
 }
 
-const CodexTerminal: React.FC<CodexTerminalProps> = ({ 
-  issueId, 
+const CodexTerminal: React.FC<CodexTerminalProps> = ({
   issueTitle = 'Issue',
   issueDescription = '',
   repo = 'hail007/Agent-Testing'
 }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
-  const [terminal, setTerminal] = useState<Terminal | null>(null);
-  const [socket, setSocket] = useState<WebSocket | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [prompt, setPrompt] = useState(issueDescription);
   const [autoMode, setAutoMode] = useState(false);
-  const [outputBuffer, setOutputBuffer] = useState(''); // Buffer for chunked output
   const fitAddonRef = useRef<FitAddon | null>(null);
   
   // Use refs to prevent stale closures
   const socketRef = useRef<WebSocket | null>(null);
   const terminalRef2 = useRef<Terminal | null>(null);
   const isConnectedRef = useRef(false);
+  const isRunningRef = useRef(false);
 
   // Cleanup function
   const cleanup = useCallback(() => {
@@ -43,11 +39,11 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
       terminalRef2.current.dispose();
       terminalRef2.current = null;
     }
-    setSocket(null);
-    setTerminal(null);
     setIsConnected(false);
     isConnectedRef.current = false;
     setSessionId(null);
+    setIsRunning(false);
+    isRunningRef.current = false;
   }, []);
 
   // Initialize terminal and WebSocket
@@ -91,22 +87,21 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
     
     term.loadAddon(fitAddon);
     term.open(terminalRef.current);
+    term.focus();
     fitAddon.fit();
 
     // Store terminal reference
-    terminalRef2.current = term;
-    setTerminal(term);
+      terminalRef2.current = term;
 
     // Create WebSocket connection
     const ws = new WebSocket('ws://localhost:8000/ws/terminal');
     socketRef.current = ws;
-    
+
     ws.onopen = () => {
       console.log('WebSocket connected successfully');
       if (!isConnectedRef.current) { // Prevent duplicate messages
         isConnectedRef.current = true;
         setIsConnected(true);
-        setSocket(ws);
         
         term.writeln('🚀 Harmonia Codex Terminal');
         term.writeln('================================');
@@ -134,6 +129,7 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
           case 'status':
             if (data.data === 'completed' || data.data === 'stopped') {
               setIsRunning(false);
+              isRunningRef.current = false;
               term.writeln('\n✅ Codex task completed');
             }
             break;
@@ -141,6 +137,7 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
           case 'error':
             term.writeln(`\n❌ Error: ${data.message || data.data}`);
             setIsRunning(false);
+            isRunningRef.current = false;
             break;
           
           default:
@@ -157,6 +154,8 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
         term.writeln('\n❌ Connection error');
         setIsConnected(false);
         isConnectedRef.current = false;
+        setIsRunning(false);
+        isRunningRef.current = false;
       }
     };
 
@@ -167,12 +166,13 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
         setIsConnected(false);
         isConnectedRef.current = false;
         setIsRunning(false);
+        isRunningRef.current = false;
       }
     };
 
     // Handle terminal input
     term.onData((data) => {
-      if (socketRef.current?.readyState === WebSocket.OPEN && isRunning) {
+      if (socketRef.current?.readyState === WebSocket.OPEN && isRunningRef.current) {
         socketRef.current.send(JSON.stringify({
           type: 'input',
           data: data
@@ -192,7 +192,7 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
       window.removeEventListener('resize', handleResize);
       cleanup();
     };
-  }, [cleanup, isRunning]);
+  }, [cleanup]);
 
   // Effect with proper cleanup
   useEffect(() => {
@@ -250,6 +250,7 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
 
     // Send command to start REAL Codex
     setIsRunning(true);
+    isRunningRef.current = true;
     socketRef.current.send(JSON.stringify({
       type: 'start_codex',
       prompt: prompt,
@@ -265,6 +266,7 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
         type: 'stop'
       }));
       setIsRunning(false);
+      isRunningRef.current = false;
     }
   };
 
