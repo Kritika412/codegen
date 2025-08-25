@@ -59,7 +59,6 @@ function App() {
   const [selectedIssue, setSelectedIssue] = useState('');
   const [selectedRepo, setSelectedRepo] = useState('harmoniaailabs/Symptom-to-Next-Step-Advisor-Non-Diagnostic-');
   const [selectedProjectNumber, setSelectedProjectNumber] = useState<number>(1); // Default project
-  const [availableProjects, setAvailableProjects] = useState<number[]>([]);
   const [issueDescription, setIssueDescription] = useState('');
   const [originalIssueDescription, setOriginalIssueDescription] = useState('');
   const [selectedLLM, setSelectedLLM] = useState('codex');

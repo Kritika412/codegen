@@ -3,9 +3,9 @@
 const API_BASE_URL = 'http://localhost:8000/api';
 
 export interface ApiIssue {
-  url: any;
-  repository: any;
-  repo: any;
+  url: string;
+  repository: string;
+  repo: string;
   id: number;
   number: number;
   title: string;
@@ -63,14 +63,27 @@ export interface ApiRepositoryBranches {
   branches: ApiBranch[];
 }
 
+export interface ApiSprintSummary {
+  current_sprint: string;
+  start_date: string;
+  end_date: string;
+  days_remaining: number;
+  sprint_goals: string;
+  total_issues: number;
+  backlog: number;
+  ready: number;
+  in_progress: number;
+  in_review: number;
+}
+
 class ApiClient {
-  private async fetchWithErrorHandling(url: string): Promise<any> {
+  private async fetchWithErrorHandling<T>(url: string): Promise<T> {
     try {
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      return await response.json();
+      return await response.json() as T;
     } catch (error) {
       console.error('API Error:', error);
       throw error;
@@ -90,7 +103,7 @@ class ApiClient {
       url += `?${params.toString()}`;
     }
     
-    return this.fetchWithErrorHandling(url);
+    return this.fetchWithErrorHandling<ApiIssue[]>(url);
   }
 
   async getReadyIssues(sprintName: string, projectNumber?: number): Promise<ApiIssue[]> {
@@ -98,7 +111,7 @@ class ApiClient {
     if (projectNumber) {
       url += `&project_number=${projectNumber}`;
     }
-    return this.fetchWithErrorHandling(url);
+    return this.fetchWithErrorHandling<ApiIssue[]>(url);
   }
 
   async getSprints(projectNumber?: number): Promise<ApiSprint[]> {
@@ -106,29 +119,29 @@ class ApiClient {
     if (projectNumber) {
       url += `?project_number=${projectNumber}`;
     }
-    return this.fetchWithErrorHandling(url);
+    return this.fetchWithErrorHandling<ApiSprint[]>(url);
   }
 
-  async getSprintSummary(sprintName: string, projectNumber?: number): Promise<any> {
+  async getSprintSummary(sprintName: string, projectNumber?: number): Promise<ApiSprintSummary> {
     let url = `${API_BASE_URL}/sprint-summary?sprint_name=${encodeURIComponent(sprintName)}`;
     if (projectNumber) {
       url += `&project_number=${projectNumber}`;
     }
-    return this.fetchWithErrorHandling(url);
+    return this.fetchWithErrorHandling<ApiSprintSummary>(url);
   }
 
   // Repository and project methods
   async getRepositories(): Promise<ApiRepository[]> {
-    return this.fetchWithErrorHandling(`${API_BASE_URL}/repositories`);
+    return this.fetchWithErrorHandling<ApiRepository[]>(`${API_BASE_URL}/repositories`);
   }
 
   async getProjects(): Promise<ApiProject[]> {
-    return this.fetchWithErrorHandling(`${API_BASE_URL}/projects`);
+    return this.fetchWithErrorHandling<ApiProject[]>(`${API_BASE_URL}/projects`);
   }
 
   async getRepositoryBranches(repoName: string): Promise<ApiRepositoryBranches> {
     const url = `${API_BASE_URL}/repositories/${encodeURIComponent(repoName)}/branches`;
-    return this.fetchWithErrorHandling(url);
+    return this.fetchWithErrorHandling<ApiRepositoryBranches>(url);
   }
   
   async triggerCodexGeneration(): Promise<{ message: string }> {

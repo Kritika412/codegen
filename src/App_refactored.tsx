@@ -29,55 +29,6 @@ const mockSprints = [
   },
 ];
 
-const mockIssues = [
-  {
-    id: 345,
-    title: 'Add auth middleware',
-    assignee: 'Alice',
-    status: 'in-progress',
-    body: 'Implement authentication middleware for API routes.',
-  },
-  {
-    id: 346,
-    title: 'Fix broken PR status badge',
-    assignee: 'Bob',
-    status: 'blocked',
-    body: 'The PR status badge is not updating correctly on the dashboard.',
-  },
-];
-
-const mockAgentTasks = [
-  {
-    id: 'task1',
-    agent: 'claude',
-    description: 'Generate integration tests',
-    status: 'running',
-  },
-  {
-    id: 'task2',
-    agent: 'codex',
-    description: 'refactoring: utils module',
-    status: 'done',
-  },
-];
-
-const mockPullRequests = [
-  {
-    id: 123,
-    title: 'Add dashboard view',
-    author: 'Carol',
-    branch: 'feature/dashboard',
-    status: 'ci-passed',
-  },
-  {
-    id: 124,
-    title: 'Update agent task handler',
-    author: 'Dave',
-    branch: 'refactor/agent-tasks',
-    status: 'needs-review',
-  },
-];
-
 const mockStats = {
   total: 18,
   completed: 7,
