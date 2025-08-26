@@ -5,6 +5,8 @@ import shutil
 import sys
 import platform
 import shutil as sh
+import threading
+import signal
 from github import Github
 from dotenv import load_dotenv
 from datetime import datetime
@@ -12,7 +14,8 @@ import pexpect
 import time
 
 # === Load environment variables ===
-load_dotenv()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
@@ -22,6 +25,9 @@ PROMPT = sys.argv[1] if len(sys.argv) > 1 else "Write helpful backend code"
 REPO_NAME = sys.argv[2] if len(sys.argv) > 2 else "hail007/Agent-Testing"
 REPO_URL = f"https://github.com/{REPO_NAME}.git"
 TITLE = sys.argv[3] if len(sys.argv) > 3 else "Codex Todo"
+
+# Enable interactive mode by default. Pass "auto" as the fourth argument
+# to enable automatic prompt responses.
 AUTO_MODE = len(sys.argv) > 4 and sys.argv[4] == "auto"
 
 print(f'📝 Prompt: {PROMPT}', flush=True)
@@ -77,6 +83,23 @@ def run_codex_with_pty(codex_path, prompt, temp_dir):
             encoding='utf-8',
             dimensions=(30, 120)  # rows, cols
         )
+
+        # Forward user input to Codex and allow Ctrl+C passthrough
+        def forward_input():
+            while True:
+                try:
+                    data = os.read(sys.stdin.fileno(), 1)
+                    if not data:
+                        break
+                    if data == b"\x03":
+                        child.sendcontrol("c")
+                    else:
+                        child.send(data.decode())
+                except Exception:
+                    break
+
+        prev_sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        threading.Thread(target=forward_input, daemon=True).start()
         
         # Set up real-time output streaming
         output_buffer = []
@@ -113,11 +136,15 @@ def run_codex_with_pty(codex_path, prompt, temp_dir):
                             print_and_store(child.before)
                         if child.after and child.after != pexpect.EOF:
                             print_and_store(child.after)
-                        
+
                         # Handle prompts automatically in auto mode
-                        if index in [4, 5] and AUTO_MODE:  # Yes/no or enter prompts
+                        if AUTO_MODE and index in [3, 4, 5]:
+                            # Generic questions: send empty line
+                            # Yes/no prompts: answer 'y'
+                            # Press enter prompts: send newline
                             print("\n🤖 Auto-responding to prompt...", flush=True)
-                            child.sendline('y')
+                            response = '' if index in [3, 5] else 'y'
+                            child.sendline(response)
                             time.sleep(0.5)
                 
                 except pexpect.TIMEOUT:
@@ -137,6 +164,9 @@ def run_codex_with_pty(codex_path, prompt, temp_dir):
         # Wait for process to complete
         child.close()
         exit_code = child.exitstatus
+
+        # Restore original SIGINT handler
+        signal.signal(signal.SIGINT, prev_sigint)
         
         print("-" * 60, flush=True)
         print(f"✅ Codex PTY process completed with exit code: {exit_code}", flush=True)

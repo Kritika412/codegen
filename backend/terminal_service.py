@@ -1,11 +1,12 @@
 import asyncio
-import json
 import os
-import subprocess
+import pty
+import signal
 import uuid
 from datetime import datetime
 from typing import Dict, Optional
 import logging
+from asyncio.subprocess import Process
 
 logger = logging.getLogger("harmonia_api")
 
@@ -13,8 +14,9 @@ class TerminalSession:
     def __init__(self, session_id: str, websocket):
         self.session_id = session_id
         self.websocket = websocket
-        self.process: Optional[subprocess.Popen] = None
+        self.process: Optional[Process] = None
         self.output_task: Optional[asyncio.Task] = None
+        self.master_fd: Optional[int] = None
         self.is_active = True
         self.logs = []
         
@@ -33,7 +35,7 @@ class TerminalSession:
             await self.send_message("output", "-" * 50 + "\n")
             
             # Use the PTY-enabled Codex script
-            codex_script = "run_codex_pty.py"  # Our PTY-enabled Codex script
+            codex_script = os.path.join(os.path.dirname(__file__), "run_codex_pty.py")  # PTY-enabled Codex script
             
             if not os.path.exists(codex_script):
                 await self.send_message("error", f"❌ PTY Codex script not found: {codex_script}\n")
@@ -41,7 +43,7 @@ class TerminalSession:
                 await self.send_message("output", f"📦 Install pexpect: pip install pexpect\n")
                 return
             
-            await self.send_message("output", f"📄 Using PTY Codex script: {codex_script}\n")
+            await self.send_message("output", f"📄 Using PTY Codex script: {os.path.basename(codex_script)}\n")
             
             # Prepare the command using your script's argument format
             cmd = [
@@ -58,23 +60,29 @@ class TerminalSession:
             
             await self.send_message("output", f"🔧 Command: {' '.join(cmd)}\n")
             await self.send_message("output", f"🎯 This will use PTY to properly handle Codex CLI's raw mode\n\n")
-            
-            # Start the process with proper environment
-            self.process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.PIPE,
-                text=True,
-                bufsize=1,  # Line buffered
-                universal_newlines=True,
-                env={
-                    **os.environ, 
-                    "PYTHONUNBUFFERED": "1",
-                    "FORCE_COLOR": "1"
-                }
+
+            # Create PTY
+            master_fd, slave_fd = pty.openpty()
+            self.master_fd = master_fd
+
+            env = {
+                **os.environ,
+                "PYTHONUNBUFFERED": "1",
+                "FORCE_COLOR": "1",
+            }
+
+            # Launch the process inside the PTY
+            self.process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                env=env,
             )
-            
+
+            # Close slave fd in parent process
+            os.close(slave_fd)
+
             # Start output reader
             self.output_task = asyncio.create_task(self.read_output())
             
@@ -85,62 +93,49 @@ class TerminalSession:
     async def read_output(self):
         """Read output from the process with real-time streaming"""
         try:
-            while self.is_active and self.process and self.process.poll() is None:
-                if self.process.stdout:
-                    # Read line by line for Codex output
-                    line = self.process.stdout.readline()
-                    if line:
-                        # Store log
-                        self.logs.append({
-                            'timestamp': datetime.now().isoformat(),
-                            'content': line
-                        })
-                        # Send to websocket immediately
-                        await self.send_message("output", line)
-                        
-                        # Also print to actual terminal for debugging
-                        print(line, end='', flush=True)
-                    else:
-                        # No output available, wait a bit
-                        await asyncio.sleep(0.1)
-                else:
-                    await asyncio.sleep(0.1)
-            
-            # Process has ended
+            loop = asyncio.get_running_loop()
+            while self.is_active and self.master_fd is not None:
+                try:
+                    data = await loop.run_in_executor(None, os.read, self.master_fd, 1024)
+                except OSError:
+                    break
+                if not data:
+                    break
+                text = data.decode(errors="ignore")
+                self.logs.append({
+                    'timestamp': datetime.now().isoformat(),
+                    'content': text
+                })
+                await self.send_message("output", text)
+                print(text, end='', flush=True)
+
             if self.process:
-                return_code = self.process.poll()
-                if return_code is not None:
-                    completion_msg = f"\n✅ Codex completed with exit code: {return_code}\n" if return_code == 0 else f"\n⚠️ Codex exited with code: {return_code}\n"
-                    await self.send_message("output", completion_msg)
-                    print(completion_msg, flush=True)  # Also print to actual terminal
-                    await self.send_message("status", "completed")
+                return_code = await self.process.wait()
+                completion_msg = (
+                    f"\n✅ Codex completed with exit code: {return_code}\n"
+                    if return_code == 0
+                    else f"\n⚠️ Codex exited with code: {return_code}\n"
+                )
+                await self.send_message("output", completion_msg)
+                print(completion_msg, flush=True)
+                await self.send_message("status", "completed")
         except Exception as e:
             error_msg = f"Error reading output: {str(e)}"
             logger.error(error_msg)
             await self.send_message("error", error_msg)
             print(f"❌ {error_msg}", flush=True)
+        finally:
+            if self.master_fd is not None:
+                os.close(self.master_fd)
+                self.master_fd = None
     
     async def send_input(self, data: str):
         """Send input to the process - handles Codex CLI input prompts"""
         try:
-            if self.process and self.process.stdin and not self.process.stdin.closed:
-                # Handle special keys
-                if data == '\r':  # Enter key
-                    self.process.stdin.write('\n')
-                    self.process.stdin.flush()
-                    # Echo newline to terminal
-                    await self.send_message("output", '\n')
-                elif data == '\u007f':  # Backspace
-                    # Don't send backspace to process, just echo to terminal
-                    await self.send_message("output", '\b \b')
-                else:
-                    # Send regular characters
-                    self.process.stdin.write(data)
-                    self.process.stdin.flush()
-                    # Echo to terminal (so user sees what they're typing)
-                    await self.send_message("output", data)
+            if self.master_fd is not None:
+                os.write(self.master_fd, data.encode())
             else:
-                await self.send_message("error", "Cannot send input - process not ready or stdin closed")
+                await self.send_message("error", "Cannot send input - PTY not ready")
         except Exception as e:
             await self.send_message("error", f"Failed to send input: {str(e)}")
             logger.error(f"Input error: {str(e)}")
@@ -161,19 +156,23 @@ class TerminalSession:
     async def stop(self):
         """Stop the session"""
         self.is_active = False
-        if self.process:
+        if self.master_fd is not None:
             try:
-                # Send interrupt signal first
-                self.process.terminate()
-                await asyncio.sleep(2)
-                
-                # Force kill if still running
-                if self.process.poll() is None:
+                os.close(self.master_fd)
+            except OSError:
+                pass
+            self.master_fd = None
+        if self.process and self.process.returncode is None:
+            try:
+                self.process.send_signal(signal.SIGINT)
+                try:
+                    await asyncio.wait_for(self.process.wait(), timeout=2)
+                except asyncio.TimeoutError:
                     self.process.kill()
-                    await asyncio.sleep(1)
+                    await self.process.wait()
             except Exception as e:
                 logger.error(f"Error stopping process: {str(e)}")
-        
+
         if self.output_task:
             self.output_task.cancel()
     

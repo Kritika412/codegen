@@ -12,14 +12,6 @@ const IssueHelper: React.FC<IssueHelperProps> = ({ issues }) => {
   const [issueDescription, setIssueDescription] = useState('');
   const [selectedLLM, setSelectedLLM] = useState('codex');
 
-  const handleAsk = () => {
-    console.log('Asking for help with issue:', selectedIssue);
-  };
-
-  const handleCode = () => {
-    console.log('Generating code for issue:', selectedIssue);
-  };
-
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     console.log('Saving changes:', { selectedIssue, issueDescription, selectedLLM });
@@ -77,14 +69,6 @@ const IssueHelper: React.FC<IssueHelperProps> = ({ issues }) => {
         </div>
 
         <div className="flex space-x-4">
-        {/* <button
-          type="button"
-          onClick={handleAsk}
-          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-        >
-          Ask
-        </button> */}
-
         <button
           type="button"
           onClick={async () => {
