@@ -83,7 +83,7 @@ def clone_repo_safely(repo_name: str, temp_dir: str, token: str) -> str:
             
             raise Exception(f"Could not clone repository {repo_name} with any common branch names")
 
-def run_codex_fully_automated(codex_path: str, prompt: str, cwd: str, timeout: int = 300) -> tuple[bool, str]:
+def run_codex_fully_automated(codex_path: str, prompt: str, cwd: str, timeout: int = 900) -> tuple[bool, str]:
     """Execute Codex with complete automation - sends automatic responses."""
     env = os.environ.copy()
     env["OPENAI_API_KEY"] = OPENAI_API_KEY or ""

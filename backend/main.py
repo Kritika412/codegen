@@ -84,8 +84,8 @@ app = FastAPI(title="Harmonia Agile Agentic Framework API")
 # CORS for frontend dev
 app.add_middleware(
    CORSMiddleware,
-   allow_origins=["http://localhost:5173", "http://localhost:3000"],
-   allow_credentials=True,
+   allow_origins=["*"],  # Allow all origins for app runner
+   allow_credentials=False,  # Set to False when using allow_origins=["*"]
    allow_methods=["*"],
    allow_headers=["*"],
 )
@@ -1249,89 +1249,78 @@ async def terminal_websocket(websocket: WebSocket):
         if session_id:
             await terminal_manager.remove_session(session_id)
             logger.info(f"Cleaned up session: {session_id}")
+
+@app.get("/health")
+def health_check():
+    """
+    Health check endpoint for AWS App Runner and monitoring
+    Returns basic system status and API connectivity
+    """
+    try:
+        # Test GitHub API connectivity
+        github_status = "healthy"
+        github_error = None
+        try:
+            # Quick test of GitHub API
+            g.get_user().login
+        except Exception as e:
+            github_status = "unhealthy"
+            github_error = str(e)[:100]  # Truncate error message
+        
+        # Test database/project access (optional)
+        project_status = "healthy"
+        project_error = None
+        try:
+            access_check = check_project_access(1)  # Test access to project 1
+            if not access_check["accessible"]:
+                project_status = "degraded"
+                project_error = access_check["error"][:100]
+        except Exception as e:
+            project_status = "unhealthy" 
+            project_error = str(e)[:100]
+        
+        # Overall status
+        overall_status = "healthy"
+        if github_status == "unhealthy" or project_status == "unhealthy":
+            overall_status = "unhealthy"
+        elif github_status == "degraded" or project_status == "degraded":
+            overall_status = "degraded"
+        
+        return {
+            "status": overall_status,
+            "timestamp": datetime.now().isoformat(),
+            "version": "1.0.0",
+            "services": {
+                "github_api": {
+                    "status": github_status,
+                    "error": github_error
+                },
+                "project_access": {
+                    "status": project_status,
+                    "error": project_error
+                }
+            },
+            "environment": {
+                "has_github_token": bool(GITHUB_TOKEN),
+                "has_github_repo": bool(GITHUB_REPO),
+                "organization": org
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "timestamp": datetime.now().isoformat(),
+            "error": str(e),
+            "version": "1.0.0"
+        }
             
 # Routes
 @app.get("/")
 def root():
    return {"message": "Harmonia Agile Agentic Framework API"}
 
-@app.get("/api/issues", response_model=List[Issue])
-def get_issues(sprint_name: Optional[str] = None, status: Optional[str] = None, project_number: Optional[int] = None):
-    """
-    Get issues from GitHub Projects filtered by sprint and optionally by status.
-    
-    Args:
-        sprint_name: Name of the sprint view to filter by
-        status: Optional status filter (Ready, In Progress, etc.)
-        project_number: Optional project number to use (defaults to 5)
-    
-    Returns:
-        List of issues from the specified sprint iteration
-    """
-    try:
-        if not sprint_name:
-            raise HTTPException(status_code=400, detail="sprint_name parameter is required")
-        
-        # Use provided project number or default to 5
-        actual_project_number = project_number if project_number is not None else 5
-        
-        # Get issues from the specific sprint with optional status filter
-        filtered_issues = get_project_issues_by_sprint_and_status(
-            token=token,
-            org=org,
-            project_number=actual_project_number,
-            sprint_name=sprint_name,
-            status_filter=status
-        )
-        
-        results = []
-        
-        for issue_data in filtered_issues:
-            content = issue_data['content']
-            
-            # Extract assignee
-            assignee = None
-            if 'assignees' in content and content['assignees']['nodes']:
-                assignee = content['assignees']['nodes'][0]['login']
-            
-            # Extract labels
-            labels = []
-            if 'labels' in content and content['labels']['nodes']:
-                labels = [label['name'] for label in content['labels']['nodes']]
-            
-            # Extract repository name
-            repo_name = "Unknown"
-            if 'repository' in content:
-                repo_name = content['repository']['nameWithOwner']
-            elif 'title' in content and not content.get('url'):
-                repo_name = "Draft Issue"
-            
-            # Create Issue object
-            issue = Issue(
-                id=content['id'],
-                number=content.get('number', 0),  # Draft issues might not have numbers
-                title=content['title'],
-                assignee=assignee,
-                status=issue_data['status'].lower() if issue_data['status'] else 'unknown',
-                created_at=content.get('createdAt', ''),
-                updated_at=content.get('updatedAt', ''),
-                body=content.get('body', ''),
-                labels=labels,
-                repo=repo_name,
-                url=content.get('url', '')  # Include GitHub URL
-            )
-            
-            results.append(issue)
-        
-        logger.info(f"Successfully returned {len(results)} issues for sprint '{sprint_name}' from project {actual_project_number}")
-        return results
-        
-    except Exception as e:
-        logger.error(f"Full error details: {str(e)}")
-        logger.error(f"Error type: {type(e).__name__}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Issue fetch error: {str(e)}")
+
 # Add endpoint to get available sessions
 @app.get("/api/terminal/sessions")
 def get_terminal_sessions():

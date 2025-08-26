@@ -163,9 +163,35 @@ function App() {
   // Make sure we have a selected sprint when sprints are loaded
   useEffect(() => {
     if (sprints.length > 0 && !selectedSprint) {
-      setSelectedSprint(sprints[0].id);
+      // First priority: Find the iteration marked with "(Current)"
+      const currentIteration = sprints.find(s => s.name.includes('(Current)'));
+      
+      if (currentIteration) {
+        console.log(`🎯 Auto-selecting CURRENT iteration: ${currentIteration.name}`);
+        setSelectedSprint(currentIteration.id);
+      } else {
+        // Fallback: Find iteration that contains today's date
+        const today = new Date();
+        const currentByDate = sprints.find(s => {
+          if (s.start_date && s.end_date) {
+            const startDate = new Date(s.start_date);
+            const endDate = new Date(s.end_date);
+            return today >= startDate && today <= endDate;
+          }
+          return false;
+        });
+        
+        if (currentByDate) {
+          console.log(`📅 Auto-selecting current iteration by date: ${currentByDate.name}`);
+          setSelectedSprint(currentByDate.id);
+        } else {
+          // Final fallback: most recent iteration
+          console.log(`📝 Auto-selecting most recent iteration: ${sprints[0].name}`);
+          setSelectedSprint(sprints[0].id);
+        }
+      }
     }
-  }, [sprints, selectedSprint]);
+  }, [sprints]); // Only depend on sprints
   
   // Helper function to format dates
   const formatDate = (dateString: string): string => {
@@ -207,6 +233,8 @@ function App() {
       : [];
 
   const currentSprint = displaySprints.find(sprint => sprint.id === selectedSprint) || displaySprints[0];
+
+  const currentSprintRaw = sprints.find(sprint => sprint.id === selectedSprint); // Add this line
 
   const handleSprintChange = (sprintId: string) => {
     setSelectedSprint(sprintId);
@@ -296,7 +324,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/api/issues/${issue.number}?repo_name=${encodeURIComponent(issue.repo)}`,
+        `https://prijfvh3mv.us-east-1.awsapprunner.com/api/issues/${issue.number}?repo_name=${encodeURIComponent(issue.repo)}`,
         {
           method: 'PATCH',
           headers: {
@@ -600,51 +628,66 @@ function App() {
 
         {/* Sprint Info */}
         {currentSprint && (
-          <section className="bg-white p-6 rounded-xl shadow">
-            <h2 className="text-2xl font-bold mb-2">
-              Current Sprint: {sprintSummary && sprintSummary.start_date && sprintSummary.end_date ? 
-                `${formatDate(sprintSummary.start_date)} - ${formatDate(sprintSummary.end_date)}` : 
-                currentSprint.dateRange
-              }
-            </h2>
-            <p className="text-gray-600">
-              Days Remaining: <strong>{sprintSummary ? sprintSummary.days_remaining : currentSprint.daysRemaining}</strong>
-            </p>
-            <p className="text-gray-600">
-              Sprint Goals: {sprintSummary ? sprintSummary.sprint_goals : currentSprint.goals}
-            </p>
-            <p className="text-sm text-blue-600 mt-2">
-              📋 Project #{selectedProjectNumber} | 🎯 Repository: {selectedRepo}
-            </p>
-          </section>
-        )}
+  <section className="bg-white p-6 rounded-xl shadow">
+    <h2 className="text-2xl font-bold mb-2">
+      Current Sprint: {currentSprintRaw?.start_date && currentSprintRaw?.end_date ? 
+        `${formatDate(currentSprintRaw.start_date)} - ${formatDate(currentSprintRaw.end_date)}` : 
+        currentSprint.dateRange || currentSprint.name
+      }
+    </h2>
+    <p className="text-gray-600">
+      Days Remaining: <strong>{(() => {
+        if (currentSprintRaw?.end_date) {
+          const today = new Date();
+          const endDate = new Date(currentSprintRaw.end_date);
+          const diffTime = endDate.getTime() - today.getTime();
+          return Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+        }
+        return currentSprint.daysRemaining || 0;
+      })()}</strong>
+    </p>
+    <p className="text-gray-600">
+      Sprint Goals: {sprintSummary ? sprintSummary.sprint_goals : currentSprint.goals}
+    </p>
+    <p className="text-sm text-blue-600 mt-2">
+      📋 Project #{selectedProjectNumber} | 🎯 Repository: {selectedRepo}
+    </p>
+  </section>
+)}
 
         {/* Sprint Status Summary */}
         {currentSprint && (
-          <section className="bg-white p-6 rounded-xl shadow grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="text-center">
-              <div className="text-3xl font-bold">{sprintSummary ? sprintSummary.total_issues : mockStats.total}</div>
-              <div className="text-sm text-gray-500">Total Issues</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-gray-600">{sprintSummary ? sprintSummary.backlog : 0}</div>
-              <div className="text-sm text-gray-500">Backlog</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-blue-600">{sprintSummary ? sprintSummary.ready : 0}</div>
-              <div className="text-sm text-gray-500">Ready</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-yellow-500">{sprintSummary ? sprintSummary.in_progress : mockStats.inProgress}</div>
-              <div className="text-sm text-gray-500">In Progress</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-green-600">{sprintSummary ? sprintSummary.in_review : 0}</div>
-              <div className="text-sm text-gray-500">In Review</div>
-            </div>
-          </section>
-        )}
-
+  <section className="bg-white p-6 rounded-xl shadow grid grid-cols-2 md:grid-cols-5 gap-4">
+    <div className="text-center">
+      <div className="text-3xl font-bold">{issues.length}</div>
+      <div className="text-sm text-gray-500">Total Issues</div>
+    </div>
+    <div className="text-center">
+      <div className="text-3xl font-bold text-gray-600">
+        {issues.filter(issue => issue.status === 'backlog' || issue.status === 'todo').length}
+      </div>
+      <div className="text-sm text-gray-500">Backlog</div>
+    </div>
+    <div className="text-center">
+      <div className="text-3xl font-bold text-blue-600">
+        {issues.filter(issue => issue.status === 'ready' || issue.status === 'done').length}
+      </div>
+      <div className="text-sm text-gray-500">Ready/Done</div>
+    </div>
+    <div className="text-center">
+      <div className="text-3xl font-bold text-yellow-500">
+        {issues.filter(issue => issue.status === 'in progress').length}
+      </div>
+      <div className="text-sm text-gray-500">In Progress</div>
+    </div>
+    <div className="text-center">
+      <div className="text-3xl font-bold text-green-600">
+        {issues.filter(issue => issue.status === 'in review' || issue.status === 'review').length}
+      </div>
+      <div className="text-sm text-gray-500">In Review</div>
+    </div>
+  </section>
+)}
         {/* Issues List */}
         <section className="bg-white p-6 rounded-xl shadow">
           <h3 className="text-xl font-semibold mb-4">

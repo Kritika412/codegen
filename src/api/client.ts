@@ -1,6 +1,6 @@
 // Enhanced client.ts with project management
 
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = 'https://prijfvh3mv.us-east-1.awsapprunner.com/api';
 
 export interface ApiIssue {
   url: any;
