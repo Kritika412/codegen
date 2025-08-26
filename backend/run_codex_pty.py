@@ -51,7 +51,27 @@ def main() -> None:
     try:
         print("📥 Cloning repo...", flush=True)
         token_url = f"https://{GITHUB_TOKEN}@github.com/{REPO_NAME}.git"
-        subprocess.run(["git", "clone", "--branch", BRANCH, token_url, temp_dir], check=True)
+        base_branch = BRANCH
+        try:
+            subprocess.run(
+                ["git", "clone", "--branch", base_branch, token_url, temp_dir],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Clone failed: {e.stderr.strip()}", flush=True)
+            print("🔄 Retrying without branch specification...", flush=True)
+            subprocess.run(["git", "clone", token_url, temp_dir], check=True)
+            result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            base_branch = result.stdout.strip()
+
         subprocess.run(["git", "remote", "set-url", "origin", token_url], cwd=temp_dir, check=True)
 
         codex_path = find_codex_cli()
@@ -91,7 +111,7 @@ def main() -> None:
             title=f"🤖 Codex: {TITLE}",
             body=f"Prompt: {PROMPT}\n\nAutomated PR created by Codex.",
             head=branch,
-            base=BRANCH,
+            base=base_branch,
         )
         print(f"✅ PR created: {pr.html_url}", flush=True)
 
