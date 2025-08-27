@@ -1,6 +1,7 @@
 // Enhanced client.ts with project management
 
-const API_BASE_URL = 'https://prijfvh3mv.us-east-1.awsapprunner.com/api';
+const API_BASE_URL = 'https://d3gs63rv07eyur.cloudfront.net/api';
+
 
 export interface ApiIssue {
   url: any;

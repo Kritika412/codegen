@@ -98,7 +98,9 @@ const CodexTerminal: React.FC<CodexTerminalProps> = ({
     setTerminal(term);
 
     // Create WebSocket connection
-    const ws = new WebSocket('ws://localhost:8000/ws/terminal');
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://autogen-alb-1020159705.us-east-1.elb.amazonaws.com/ws/terminal`);
+      
     socketRef.current = ws;
     
     ws.onopen = () => {

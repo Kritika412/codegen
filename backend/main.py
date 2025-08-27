@@ -1251,69 +1251,9 @@ async def terminal_websocket(websocket: WebSocket):
             logger.info(f"Cleaned up session: {session_id}")
 
 @app.get("/health")
-def health_check():
-    """
-    Health check endpoint for AWS App Runner and monitoring
-    Returns basic system status and API connectivity
-    """
-    try:
-        # Test GitHub API connectivity
-        github_status = "healthy"
-        github_error = None
-        try:
-            # Quick test of GitHub API
-            g.get_user().login
-        except Exception as e:
-            github_status = "unhealthy"
-            github_error = str(e)[:100]  # Truncate error message
-        
-        # Test database/project access (optional)
-        project_status = "healthy"
-        project_error = None
-        try:
-            access_check = check_project_access(1)  # Test access to project 1
-            if not access_check["accessible"]:
-                project_status = "degraded"
-                project_error = access_check["error"][:100]
-        except Exception as e:
-            project_status = "unhealthy" 
-            project_error = str(e)[:100]
-        
-        # Overall status
-        overall_status = "healthy"
-        if github_status == "unhealthy" or project_status == "unhealthy":
-            overall_status = "unhealthy"
-        elif github_status == "degraded" or project_status == "degraded":
-            overall_status = "degraded"
-        
-        return {
-            "status": overall_status,
-            "timestamp": datetime.now().isoformat(),
-            "version": "1.0.0",
-            "services": {
-                "github_api": {
-                    "status": github_status,
-                    "error": github_error
-                },
-                "project_access": {
-                    "status": project_status,
-                    "error": project_error
-                }
-            },
-            "environment": {
-                "has_github_token": bool(GITHUB_TOKEN),
-                "has_github_repo": bool(GITHUB_REPO),
-                "organization": org
-            }
-        }
-        
-    except Exception as e:
-        return {
-            "status": "unhealthy",
-            "timestamp": datetime.now().isoformat(),
-            "error": str(e),
-            "version": "1.0.0"
-        }
+def health():
+    return {"status": "ok"}
+
             
 # Routes
 @app.get("/")
